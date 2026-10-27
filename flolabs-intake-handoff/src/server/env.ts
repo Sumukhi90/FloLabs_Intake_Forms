@@ -33,6 +33,7 @@ const emailSettingsShape = {
   CRM_EMAIL_ALLOWED_RECIPIENTS: z.string().optional(),
   CRM_EMAIL_DATABASE_PATH: z.string().min(1).optional(),
   CRM_EMAIL_TEST_COMMANDS_ENABLED: z.enum(['true', 'false']).optional(),
+  CRM_EMAIL_TEST_BLOCK_RECIPIENT: z.string().email().optional(),
 };
 const emailSettingsSchema = z.object(emailSettingsShape);
 type EmailSettings = z.infer<typeof emailSettingsSchema>;

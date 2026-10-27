@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { getEnv } from '../src/server/env.ts';
 import { EmailSendError, createSqliteEmailStore, resolveLocalEmailDatabasePath, sendEmail } from '../src/server/email/mailbox.ts';
 import { createHrEmailDraftWithAssociationForApplication, HrEmailWorkflowError } from '../src/server/forms/hr-email-workflow.ts';
@@ -30,12 +31,19 @@ if (
 
 const store = createSqliteEmailStore(resolveLocalEmailDatabasePath(env.CRM_EMAIL_DATABASE_PATH));
 const twenty = createTwentyClient({ baseUrl: env.TWENTY_BASE_URL, apiKey: env.TWENTY_API_KEY });
+const correlationId = randomUUID();
+let applicationIdForAudit: string | undefined;
+let personIdForAudit: string | undefined;
+let recipientKnown = false;
 try {
   const result = await createHrEmailDraftWithAssociationForApplication(
     { applicationId, stage, formsBaseUrl, secret: env.LINK_TOKEN_SECRET },
     { twenty },
   );
-  await sendEmail({
+  applicationIdForAudit = result.applicationId;
+  personIdForAudit = result.contactId;
+  recipientKnown = true;
+  const sent = await sendEmail({
     host: env.CRM_EMAIL_SMTP_HOST,
     port: 465,
     username: env.CRM_EMAIL_SMTP_USERNAME,
@@ -50,15 +58,81 @@ try {
     contactId: result.contactId,
     applicationId: result.applicationId,
   });
+  console.log(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    correlationId,
+    operation: 'hr_email_send',
+    status: 'smtp_accepted',
+    applicationId: applicationIdForAudit,
+    personId: personIdForAudit,
+    recipient: '[redacted]',
+    suppressionDecision: 'not_suppressed',
+    providerInvoked: true,
+    retryCount: 0,
+    executionMode: 'configured_test_smtp',
+    messageId: sent.messageId,
+    deliveryConfirmed: false,
+  }));
   console.log('SMTP accepted the HR test message. This does not confirm recipient delivery; synchronize the mailbox to verify receipt.');
 } catch (error) {
   if (error instanceof EmailSendError) {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      correlationId,
+      operation: 'hr_email_send',
+      status: error.code === 'RECIPIENT_SUPPRESSED' ? 'blocked' : 'failed',
+      applicationId: applicationIdForAudit,
+      personId: personIdForAudit,
+      recipient: recipientKnown ? '[redacted]' : undefined,
+      suppressionDecision: error.code === 'RECIPIENT_SUPPRESSED' ? 'suppressed' : 'not_confirmed',
+      suppressionReason: error.suppressionReason,
+      error: error.code,
+      providerInvoked: error.providerInvoked,
+      retryCount: 0,
+      executionMode: 'configured_test_smtp',
+    }));
     console.error(`HR test send stopped (${error.code}). Check the allowlist and local email database before attempting any retry.`);
   } else if (error instanceof TwentyError) {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      correlationId,
+      operation: 'hr_email_send',
+      status: 'failed',
+      applicationId: applicationIdForAudit,
+      personId: personIdForAudit,
+      error: error.code,
+      providerInvoked: false,
+      retryCount: 0,
+      executionMode: 'configured_test_smtp',
+    }));
     console.error(`Twenty lookup failed (${error.code}); no message was sent.`);
   } else if (error instanceof HrEmailWorkflowError) {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      correlationId,
+      operation: 'hr_email_send',
+      status: 'failed',
+      applicationId: applicationIdForAudit,
+      personId: personIdForAudit,
+      error: 'HR_WORKFLOW_FAILED',
+      providerInvoked: false,
+      retryCount: 0,
+      executionMode: 'configured_test_smtp',
+    }));
     console.error(`${error.message} No message was sent.`);
   } else {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      correlationId,
+      operation: 'hr_email_send',
+      status: 'failed',
+      applicationId: applicationIdForAudit,
+      personId: personIdForAudit,
+      error: 'UNEXPECTED_FAILURE',
+      providerInvoked: false,
+      retryCount: 0,
+      executionMode: 'configured_test_smtp',
+    }));
     console.error('HR test send failed. No provider details or credentials were logged.');
   }
   process.exitCode = 1;

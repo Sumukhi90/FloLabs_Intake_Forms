@@ -17,6 +17,7 @@
     "test:live-write": "node --env-file=.env.local scripts/run-live-write.mjs",
     "make-link": "node --env-file=.env.local --conditions=react-server scripts/make-form-link.mts",
     "make-email-draft": "node --env-file=.env.local --conditions=react-server scripts/make-hr-email-draft.mts",
+    "block-hr-email:test": "node --env-file=.env.local --conditions=react-server scripts/block-hr-email-test.mts",
     "send-hr-email:test": "node --env-file=.env.local --conditions=react-server scripts/send-hr-email-test.mts",
     "sync-crm-email:test": "node --env-file=.env.local --conditions=react-server scripts/sync-crm-email-test.mts",
     "inspect-crm-email:test": "node --env-file=.env.local --conditions=react-server scripts/inspect-crm-email-test.mts",

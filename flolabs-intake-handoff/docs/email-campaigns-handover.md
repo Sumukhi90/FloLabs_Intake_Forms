@@ -1,29 +1,31 @@
 # Email & Campaigns handover
 
-Status as of 2026-10-27: **partially implemented; live integration blocked**.
+Status as of 2026-10-27: **local HR suppression protection implemented; live acceptance blocked by missing access/configuration**.
 
 ## What exists
 
 - The HR workflow generates drafts. A separate, non-production SMTP test command requires an explicit recipient allowlist. It is not the regular applicant notification workflow.
 - The server-only mailbox module implements SMTP delivery, IMAP UID/UIDVALIDITY synchronization, parsing, Message-ID reply threading, deduplication, and a local SQLite test store. It does not write email messages or threads to Twenty.
+- HR test sends now check a persistent, local SQLite suppression table immediately before outbound reservation/provider invocation. The test-only `block-hr-email:test` command records `MANUAL_TEST_BLOCK`; duplicate block requests preserve the original reason. Suppression lookup failures fail closed. These local entries are not synced with Twenty or the separate marketing suppression backend and are not production suppression storage.
+- The HR test command emits structured JSON audit events to stdout/stderr with a correlation ID, UTC timestamp, CRM IDs when available, redacted recipient, outcome, suppression reason, provider-invocation status, retry count, and test execution mode. It does not retain a separate durable audit log. SMTP acceptance is recorded separately from inbox delivery confirmation.
 - Marketing eligibility requires an explicit `MARKETING` purpose, topic, and eligibility callback. Consent must be true in the existing Twenty Person record and active suppression lookups must return clear; failures block. No campaign sender currently wires this path to a live provider. Bulk sending remains deferred.
-- Unsubscribe updates the Person consent flag and records durable suppression when the configured store is available. SES event processing stores hard-bounce and complaint suppressions; duplicate markers are idempotent. The SES/SNS/Lambda path is not deployed or connected to the mailbox SMTP sender.
+- Existing unsubscribe/feedback code remains outside this one-to-one HR deliverable. AWS resources and access are explicitly out of scope; no AWS deployment, DNS change, or AWS integration test is part of this work.
 - Application links remain single-use and expire after 21 days. Existing loopback HTTP support is unchanged.
 
 ## This work
 
-- Rejected invalid runtime sender purposes and normalized/validated suppression topic identifiers consistently before lookups and persistence.
-- Corrected the SES Lambda role to include `dynamodb:Query`, required by its suppression-store lookups. Removed configured `AWS_REGION` from the Lambda environment because Lambda provides this reserved runtime variable.
-- Added focused tests for invalid purpose/topic, topic normalization, and fail-closed eligibility. Updated setup and schema documentation with current evidence and approvals needed.
+- Added a local, persistent manual HR test-blocklist and wired it into the shared email send path so HR and marketing sends fail closed on a matching local entry or a suppression lookup error.
+- Added structured, PII-redacted audit output to the test send command and documented local-only scope, safety boundaries, and the blocked-send procedure.
+- Added tests for suppressed-recipient rejection before provider invocation, suppression lookup failure, persistence across store restarts, normalized addresses, and idempotent reason preservation.
 
 ## Verification performed
 
-- Full tests: `npm test` — **426 passed, 12 skipped** (30 test files passed, 3 skipped).
-- Focused email/suppression tests: **58 passed** across six files.
-- `npm run lint`, `npm run typecheck`, `npm run build`, and `npm run build:ses-feedback` passed.
-- The SAM template parsed using the installed YAML parser; structural checks confirmed the feedback role includes `dynamodb:Query` and the function does not configure `AWS_REGION`. `sam validate` and `sam build` were unavailable because SAM CLI is not installed.
-- `git diff --check` passed. A scan found no AWS key, private key, or non-placeholder mailbox password in the modified tracked files.
-- No live CRM, mailbox, HubSpot, or AWS test was performed. No email was sent, CRM record changed, infrastructure deployed, or DNS changed.
+- Full suite: `npm test` — **429 passed, 12 skipped** (30 test files passed, 3 skipped).
+- Focused mailbox suite: `npm test -- src/server/email/mailbox.test.ts` — **16 passed**.
+- `npm run lint`, `npm run typecheck`, and `npm run build` passed after the current changes.
+- `git diff --check` passed. `npm run build:ses-feedback` was not run in this pass because AWS/SES is explicitly out of scope.
+- The HR suppression tests are mocked/local: they verify that a persisted `MANUAL_TEST_BLOCK` prevents the provider mock from being called and that suppression lookup failures fail closed. They do not prove a live mailbox or CRM integration.
+- No live CRM read/write, mailbox connection, email send/receive, or reply test was performed. No test Applications or People were created and no address was added to a local blocklist. No email was sent and no CRM record changed. The current environment has no `.env.local`, and the shared CRM browser remains at its sign-in page.
 
 ## Required access and approvals
 
@@ -48,10 +50,10 @@ See [email-access-request.md](./email-access-request.md) for a concise, ready-to
 - Authorize execution-host network access and provide an explicit recipient allowlist in `CRM_EMAIL_ALLOWED_RECIPIENTS`. Use implicit TLS (IMAP 993, SMTP 465); do not disable certificate checks.
 - Confirm the test mailbox is available under Accounts > Emails only for inspection. Do not connect or alter CRM settings without authorization.
 
-### AWS administrator
+### Test-record owner
 
-- Provide an isolated non-production account/role and region if SES feedback live verification is requested. Review the corrected IAM role, function/SNS permissions, SES identity/configuration set, and failure queue access.
-- Install/enable SAM CLI for full template validation. Any deployment, SES configuration, or DNS action requires separate explicit authorization and owner review.
+- After read-only discovery, provide permission to create exactly two temporary test Applications and their correctly linked People if those records do not already exist. Prefer a dedicated test workspace or record-limited permissions; no broad production write access. Provide only synthetic required form fields through an approved local channel, identify the authorized test mailbox there, and confirm the test records can be removed afterward if policy permits.
+- Approve one blocked-send test to the suppressed test address and one real test send to the explicitly authorized mailbox. No live send is permitted until sender, recipient, reply-from account, and test records are confirmed.
 
 ## Exact next steps after access is provisioned
 
@@ -61,7 +63,7 @@ See [email-access-request.md](./email-access-request.md) for a concise, ready-to
 2. Inspect the live GraphQL schema and read-only Accounts > Emails state. Confirm native email send, message/thread read/query, People target association, and the exact required permissions. Do not implement CRM persistence based only on the historical T2e snapshot.
 3. If native People-thread support is verified and approved, implement only those supported operations; leave Application association indirect/unset. Obtain Whitney's decision before any schema change.
 4. With an approved test mailbox, recipient, reply-from account, and synthetic Person, test provider connectivity, send and verify actual inbox delivery, reply, sync, Message-ID/In-Reply-To/References matching, duplicate sync, and Person association. Record each outcome; SMTP acceptance is not delivery proof.
-5. Test consent denial, active suppression, unsubscribe, duplicate/delayed SES events, and hard-bounce/complaint suppression against an isolated authorized non-production store. Do not send marketing or deploy the SES stack until separately approved.
+5. Add a truthful local `MANUAL_TEST_BLOCK` only after the test recipient is approved. Run the normal HR command once against the blocked test Application and verify the logged `RECIPIENT_SUPPRESSED` outcome with `providerInvoked: false`. Then, only after explicit approval and mailbox setup, test the eligible recipient, inbox receipt, reply threading, duplicate prevention, and People association. Do not send campaigns or perform AWS work.
 
 The reported screenshot counts (6 People, 3 Applications) and zero Data Model Records values, and the saved 2026-10-24 snapshot counts (6 and 3), are observations that do not resolve the discrepancy. No current live evidence is available.
 

@@ -107,12 +107,19 @@ describe('parseEnv', () => {
       CRM_EMAIL_ALLOWED_RECIPIENTS: 'crm.test1@flolabsinnovations.com, test@example.com',
       CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
       CRM_EMAIL_TEST_COMMANDS_ENABLED: 'true',
+      CRM_EMAIL_TEST_BLOCK_RECIPIENT: 'blocked-test@example.com',
     };
     expect(parseEnv(base)).toMatchObject({
       CRM_EMAIL_IMAP_PORT: 993,
       CRM_EMAIL_SMTP_PORT: 465,
       CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
     });
+    expect(parseEmailEnvironment({
+      CRM_EMAIL_TEST_BLOCK_RECIPIENT: 'blocked-test@example.com',
+    }).CRM_EMAIL_TEST_BLOCK_RECIPIENT).toBe('blocked-test@example.com');
+    expect(() => parseEmailEnvironment({
+      CRM_EMAIL_TEST_BLOCK_RECIPIENT: 'not-an-address',
+    })).toThrow(/CRM_EMAIL_TEST_BLOCK_RECIPIENT/);
   });
 
   it.each([

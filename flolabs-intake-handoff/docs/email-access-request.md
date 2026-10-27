@@ -1,6 +1,6 @@
 # Email integration access request
 
-Ready to send to the named owners. Please provision credentials through the approved local secret store or an authorized secret manager integration; **do not send passwords, API keys, or tokens in chat or email**. This request does not authorize production changes, live email, schema changes, deployment, or DNS changes.
+Ready to send to the named owners. Please provision credentials through the approved local secret store or an authorized secret manager integration; **do not send passwords, API keys, or tokens in chat or email**. This request does not authorize production changes, live email, schema changes, or DNS changes. AWS resources and access are out of scope.
 
 ## Atankeu / Twenty workspace administrator
 
@@ -13,6 +13,8 @@ Please provide:
 
 No create/update/delete, schema mutation, or send-email permission is requested for discovery. We will compare current API counts, Data Model counts, and visible list rows in the same workspace/account to investigate the reported 6/3 versus zero discrepancy. Please identify a synthetic test Person and Application safe to inspect. Do not provide bulk contact exports.
 
+For the separately authorized acceptance test, after read-only duplicate checks, please enable temporary permission to create only the two approved synthetic test People and Applications (each Application linked to its Person) in a dedicated test workspace or with the narrowest available record scope. Do not grant schema, delete, or general production write access. If these permissions cannot be limited safely, provide a dedicated test workspace instead.
+
 ## Whitney
 
 Please confirm:
@@ -21,6 +23,7 @@ Please confirm:
 - That the recipient address may receive a uniquely identifiable test message and reply, and that no real applicant or production record will be used.
 - The already selected data policy: People association only after native support is verified; Application association remains indirect or unset.
 - Any required schema change must be proposed separately and receive your explicit approval before implementation. This request does not seek schema-change approval.
+- Confirm the two explicitly described synthetic records and one blocked-send / one allowed-send test are authorized, including removal of test records if appropriate under retention policy.
 
 ## Mailbox owner / operations
 
@@ -32,11 +35,7 @@ Please confirm the dedicated test mailbox is enabled for authenticated IMAP and 
 
 Please explicitly name the authorized sender, test recipient, and reply-from account. No real-applicant recipients, bulk sends, or TLS-validation exceptions are requested. Do not connect or change Twenty Accounts > Emails settings without separate approval.
 
-## AWS administrator
-
-For initial review, please provide an authorized non-production AWS account/region and a read-only role or session to inspect relevant SES identity/configuration-set, SNS, Lambda, DynamoDB, IAM, and DLQ configuration without exposing credentials. Confirm whether an isolated non-production feedback stack already exists.
-
-If live SES feedback testing is approved later, separately authorize a least-privilege test role and a synthetic bounce/complaint event plan in that isolated environment. The SES/SNS/Lambda/DynamoDB stack is not deployed by this work. Deployment, SES identity/configuration changes, real test sends, and DNS changes are explicitly outside this request and need separate written approval.
+For local use, place `TWENTY_BASE_URL`, `TWENTY_API_KEY`, `LINK_TOKEN_SECRET`, the SMTP and IMAP settings above, the two approved recipients in `CRM_EMAIL_ALLOWED_RECIPIENTS`, `CRM_EMAIL_DATABASE_PATH=.local/email.sqlite`, and `CRM_EMAIL_TEST_COMMANDS_ENABLED=true` in the approved local secret store or ignored `.env.local`. Set `CRM_EMAIL_TEST_BLOCK_RECIPIENT=natanahelatankeu@gmail.com` only for the local test-blocklist operation. Do not send these values in chat. The run must be non-production and use the explicit allowlist.
 
 ## After access is ready
 
@@ -44,4 +43,4 @@ If live SES feedback testing is approved later, separately authorize a least-pri
 2. The developer verifies the live GraphQL email/thread operations, actual permission requirements, and Accounts > Emails connection without changing settings.
 3. If supported and approved, implement People association only; leave Application association indirect/unset.
 4. After Whitney approves the synthetic recipient and scenario, perform one controlled send-and-reply test, verify received content in the test mailbox, thread headers, duplicate sync behavior, and CRM association.
-5. Test consent/suppression/unsubscribe and isolated synthetic SES events. Report each case and any unavailable path separately. Do not deploy or send campaigns.
+5. Test consent, the local HR test blocklist, unsubscribe handling, and provider-failure behavior with isolated test resources. Report each case and any unavailable path separately. Do not send campaigns or perform AWS work.

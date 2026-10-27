@@ -64,6 +64,67 @@ describe('SMTP sending', () => {
     });
   });
 
+  it('blocks HR sends from the persistent local suppression list before provider invocation', async () => {
+    const store = createStore();
+    store.addSuppression('APPROVED@example.test', 'MANUAL_TEST_BLOCK');
+    const deliver = vi.fn();
+
+    const failure = await sendEmail(smtp, store, {
+      key: 'suppressed-hr-test',
+      to: 'approved@example.test',
+      subject: 'Test',
+      text: 'Safe test content',
+      purpose: 'HR_TEST',
+    }, deliver).catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({
+      code: 'RECIPIENT_SUPPRESSED',
+      suppressionReason: 'MANUAL_TEST_BLOCK',
+      providerInvoked: false,
+    });
+    expect(deliver).not.toHaveBeenCalled();
+    expect(store.listMessages()).toHaveLength(0);
+  });
+
+  it('fails closed when suppression status cannot be read', async () => {
+    const store = createStore();
+    const unreadableStore: EmailStore = {
+      ...store,
+      reserveOutboundUnlessSuppressed: () => { throw new Error('local suppression database unavailable'); },
+    };
+    const deliver = vi.fn();
+    const failure = await sendEmail(smtp, unreadableStore, {
+      key: 'suppression-lookup-failure',
+      to: 'approved@example.test',
+      subject: 'Test',
+      text: 'Safe test content',
+      purpose: 'HR_TEST',
+    }, deliver).catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ code: 'ELIGIBILITY_UNAVAILABLE', providerInvoked: false });
+    expect(deliver).not.toHaveBeenCalled();
+    expect(store.listMessages()).toHaveLength(0);
+  });
+
+  it('normalizes and persists suppression entries across store restarts without replacing the original reason', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'flolabs-email-restart-test-'));
+    directories.push(directory);
+    const databasePath = join(directory, 'mail.sqlite');
+    const firstStore = createSqliteEmailStore(databasePath);
+    expect(firstStore.addSuppression(' APPROVED@EXAMPLE.TEST ', 'MANUAL_TEST_BLOCK'))
+      .toEqual({ created: true, reason: 'MANUAL_TEST_BLOCK' });
+    firstStore.close();
+
+    const reopenedStore = createSqliteEmailStore(databasePath);
+    expect(reopenedStore.addSuppression('approved@example.test', 'UNSUBSCRIBED'))
+      .toEqual({ created: false, reason: 'MANUAL_TEST_BLOCK' });
+    expect(reopenedStore.getSuppression('Approved@example.test')).toMatchObject({
+      email: 'approved@example.test',
+      reason: 'MANUAL_TEST_BLOCK',
+    });
+    reopenedStore.close();
+  });
+
   it('refuses an unapproved address and malformed messages before SMTP', async () => {
     const deliver = vi.fn();
     await expect(sendEmail(smtp, createStore(), {
