@@ -65,7 +65,7 @@ describe('DynamoDB suppression store', () => {
       normalizedEmail: 'person+tag@example.com',
       reason: 'UNSUBSCRIBED',
       scope: 'TOPIC',
-      topic: 'newsletter',
+      topic: ' newsletter ',
       eventId: 'sns-event-1',
       source: 'UNSUBSCRIBE',
     });
@@ -118,6 +118,6 @@ describe('DynamoDB suppression store', () => {
         eventId: 'evt',
         source: 'UNSUBSCRIBE',
       }),
-    ).rejects.toThrow('TOPIC_REQUIRED');
+    ).rejects.toThrow('INVALID_TOPIC');
   });
 });

@@ -7,6 +7,7 @@ import { ImapFlow, type FetchMessageObject } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
 import { z } from 'zod';
+import { normalizeTopic } from '../suppression/normalize';
 
 const emailAddress = z.string().email();
 const MAX_MESSAGE_BYTES = 1024 * 1024;
@@ -258,7 +259,7 @@ type SmtpMessage = {
 type SmtpResponse = { messageId?: string; accepted?: Array<string | { address: string }> };
 type MarketingEligibility =
   | { allowed: true; personId: string }
-  | { allowed: false; reason: 'INVALID_EMAIL' | 'NO_CONSENT' | 'SUPPRESSED' | 'LOOKUP_FAILED' };
+  | { allowed: false; reason: 'INVALID_EMAIL' | 'INVALID_TOPIC' | 'NO_CONSENT' | 'SUPPRESSED' | 'LOOKUP_FAILED' };
 type MarketingEligibilityCheck = (email: string, topic: string) => Promise<MarketingEligibility>;
 
 export async function sendEmail(
@@ -310,15 +311,24 @@ export async function sendEmail(
   ) {
     throw new EmailSendError('INVALID_MESSAGE');
   }
+  if (input.purpose !== 'HR_TEST' && input.purpose !== 'MARKETING') {
+    throw new EmailSendError('INVALID_MESSAGE');
+  }
   if (!settings.allowedRecipients.some((allowed) => allowed.trim().toLowerCase() === recipient)) {
     throw new EmailSendError('RECIPIENT_NOT_APPROVED');
   }
   let eligiblePersonId: string | undefined;
   if (input.purpose === 'MARKETING') {
     if (!input.topic?.trim() || !checkEligibility) throw new EmailSendError('ELIGIBILITY_UNAVAILABLE');
+    let topic: string;
+    try {
+      topic = normalizeTopic(input.topic ?? '');
+    } catch {
+      throw new EmailSendError('INVALID_MESSAGE');
+    }
     let eligibility: MarketingEligibility;
     try {
-      eligibility = await checkEligibility(recipient, input.topic);
+      eligibility = await checkEligibility(recipient, topic);
     } catch {
       throw new EmailSendError('ELIGIBILITY_UNAVAILABLE');
     }
@@ -326,6 +336,7 @@ export async function sendEmail(
       if (eligibility.reason === 'NO_CONSENT') throw new EmailSendError('CONSENT_REQUIRED');
       if (eligibility.reason === 'SUPPRESSED') throw new EmailSendError('SUPPRESSED');
       if (eligibility.reason === 'INVALID_EMAIL') throw new EmailSendError('INVALID_MESSAGE');
+      if (eligibility.reason === 'INVALID_TOPIC') throw new EmailSendError('INVALID_MESSAGE');
       throw new EmailSendError('ELIGIBILITY_UNAVAILABLE');
     }
     if (!eligibility.personId.trim()) throw new EmailSendError('ELIGIBILITY_UNAVAILABLE');

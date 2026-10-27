@@ -13,6 +13,8 @@ The handler accepts messages only from its configured SNS topic. Delivery, rejec
 
 The app's durable store is DynamoDB, configured through `AWS_REGION` and `SUPPRESSION_TABLE_NAME`; the app should use its workload IAM role, never static AWS keys. Before marketing eligibility can pass, the app separately finds the recipient in Twenty and requires `communicationConsent === true`, then checks the DynamoDB suppression table. Neither the feedback handler nor its test-only in-memory store sends mail. The HR draft command remains independent.
 
+The Lambda obtains `AWS_REGION` from the AWS runtime; do not define it in the function's configured environment variables because Lambda reserves that key. The feedback handler's DynamoDB store queries active suppressions, so its execution role needs `dynamodb:Query` in addition to the item get/put/update actions.
+
 ## Approval and prerequisites
 
 Before an administrator performs any AWS action:
@@ -37,6 +39,8 @@ sam build --template-file infra/aws/template.yaml
 
 The build produces `infra/aws/dist/handler.mjs`; the SAM `CodeUri` points to that local bundle. Build and validate only after installing the lockfile dependencies. This project does not deploy automatically. A human administrator must review the built template and account/region before any deployment. The template limits `EnvironmentName` to `dev` or `staging`, retains the DynamoDB table on deletion/replacement, enables point-in-time recovery and server-side encryption, and expires only processed-event markers after one year.
 
+Local verification on 2026-10-27: the handler bundle builds and the template parses with the installed YAML parser; a structural check confirms the feedback role has the required `dynamodb:Query` action and the function does not configure reserved `AWS_REGION`. `sam validate` and `sam build` remain unverified because SAM CLI is unavailable. No AWS resources were deployed.
+
 If and only if the approved administrator separately authorizes a non-production deployment, SAM's guided deployment is:
 
 ```powershell
@@ -49,7 +53,7 @@ Choose the approved non-production account/region and review the change set. Do 
 
 The template gives the feedback Lambda role only:
 
-- `dynamodb:GetItem` and `dynamodb:PutItem` for event markers and `dynamodb:UpdateItem` for suppression records on the one table;
+- `dynamodb:GetItem` and `dynamodb:PutItem` for event markers, `dynamodb:UpdateItem` for suppression records, and `dynamodb:Query` for active suppression lookups on the one table;
 - `sqs:SendMessage` on the one failure queue;
 - `logs:CreateLogStream` and `logs:PutLogEvents` on that function's log group.
 

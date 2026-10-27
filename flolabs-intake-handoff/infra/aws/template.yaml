@@ -69,7 +69,7 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:Query, dynamodb:UpdateItem]
                 Resource: !GetAtt SuppressionTable.Arn
               - Effect: Allow
                 Action: sqs:SendMessage
@@ -90,7 +90,6 @@ Resources:
       MemorySize: 256
       Environment:
         Variables:
-          AWS_REGION: !Ref AWS::Region
           SUPPRESSION_TABLE_NAME: !Ref SuppressionTable
           EXPECTED_SNS_TOPIC_ARN: !Ref SesFeedbackTopic
 

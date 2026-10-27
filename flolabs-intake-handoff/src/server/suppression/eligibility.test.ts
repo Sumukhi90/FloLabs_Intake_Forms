@@ -69,4 +69,21 @@ describe('marketing send eligibility', () => {
       reason: 'LOOKUP_FAILED',
     });
   });
+
+  it('normalizes valid topics and rejects invalid topics before CRM or suppression lookups', async () => {
+    const valid = deps();
+    await expect(checkMarketingEligibility('person@example.com', ' newsletter ', valid)).resolves.toEqual({
+      allowed: true,
+      personId: person.id,
+    });
+    expect(valid.suppressions.isSuppressed).toHaveBeenCalledWith('person@example.com', 'newsletter');
+
+    const invalid = deps();
+    await expect(checkMarketingEligibility('person@example.com', ' newsletter\n', invalid)).resolves.toEqual({
+      allowed: false,
+      reason: 'INVALID_TOPIC',
+    });
+    expect(invalid.people.findPersonByEmail).not.toHaveBeenCalled();
+    expect(invalid.suppressions.isSuppressed).not.toHaveBeenCalled();
+  });
 });

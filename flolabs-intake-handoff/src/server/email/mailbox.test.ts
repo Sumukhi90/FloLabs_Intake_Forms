@@ -80,10 +80,34 @@ describe('SMTP sending', () => {
       text: '',
       purpose: 'HR_TEST',
     }, deliver)).rejects.toMatchObject({ code: 'INVALID_MESSAGE' });
+    const invalidPurposeStore = createStore();
+    await expect(Reflect.apply(sendEmail, undefined, [
+      smtp,
+      invalidPurposeStore,
+      {
+        key: 'invalid-purpose',
+        to: 'approved@example.test',
+        subject: 'Test',
+        text: 'Test',
+        purpose: 'CAMPAIGN',
+      },
+      deliver,
+    ])).rejects.toMatchObject({ code: 'INVALID_MESSAGE' });
+    await expect(sendEmail(smtp, invalidPurposeStore, {
+      key: 'invalid-marketing-topic',
+      to: 'approved@example.test',
+      subject: 'Test',
+      text: 'Test',
+      purpose: 'MARKETING',
+      topic: 'newsletter\n',
+    }, deliver, async () => ({ allowed: true, personId: 'consented-person' })))
+      .rejects.toMatchObject({ code: 'INVALID_MESSAGE' });
+    expect(invalidPurposeStore.listMessages()).toHaveLength(0);
     expect(deliver).not.toHaveBeenCalled();
   });
 
   it('requires explicit consent and an active-suppression check for marketing sends', async () => {
+    const store = createStore();
     const deliver = vi.fn(async (message: { messageId: string }) => ({
       messageId: message.messageId,
       accepted: ['approved@example.test'],
@@ -96,28 +120,29 @@ describe('SMTP sending', () => {
       purpose: 'MARKETING' as const,
       topic: 'newsletter',
     };
-    await expect(sendEmail(smtp, createStore(), message, deliver))
+    await expect(sendEmail(smtp, store, message, deliver))
       .rejects.toMatchObject({ code: 'ELIGIBILITY_UNAVAILABLE' });
-    await expect(sendEmail(smtp, createStore(), { ...message, topic: undefined }, deliver, async () => ({
+    await expect(sendEmail(smtp, store, { ...message, topic: undefined }, deliver, async () => ({
       allowed: true,
       personId: 'consented-person',
     }))).rejects.toMatchObject({ code: 'ELIGIBILITY_UNAVAILABLE' });
-    await expect(sendEmail(smtp, createStore(), message, deliver, async () => ({
+    await expect(sendEmail(smtp, store, message, deliver, async () => ({
       allowed: false,
       reason: 'NO_CONSENT',
     }))).rejects.toMatchObject({ code: 'CONSENT_REQUIRED' });
-    await expect(sendEmail(smtp, createStore(), message, deliver, async () => ({
+    await expect(sendEmail(smtp, store, message, deliver, async () => ({
       allowed: false,
       reason: 'SUPPRESSED',
     }))).rejects.toMatchObject({ code: 'SUPPRESSED' });
-    await expect(sendEmail(smtp, createStore(), message, deliver, async () => {
+    await expect(sendEmail(smtp, store, message, deliver, async () => {
       throw new Error('suppression database unavailable');
     })).rejects.toMatchObject({ code: 'ELIGIBILITY_UNAVAILABLE' });
-    await expect(sendEmail(smtp, createStore(), message, deliver, async () => ({
+    await expect(sendEmail(smtp, store, message, deliver, async () => ({
       allowed: false,
       reason: 'LOOKUP_FAILED',
     }))).rejects.toMatchObject({ code: 'ELIGIBILITY_UNAVAILABLE' });
     expect(deliver).not.toHaveBeenCalled();
+    expect(store.listMessages()).toHaveLength(0);
   });
 
   it('associates eligible marketing messages with the consented Twenty person', async () => {
@@ -137,7 +162,7 @@ describe('SMTP sending', () => {
       subject: 'Test newsletter',
       text: 'Approved test content',
       purpose: 'MARKETING',
-      topic: 'newsletter',
+      topic: ' newsletter ',
       contactId: 'unverified-caller-person',
     }, deliver, eligibility);
     expect(eligibility).toHaveBeenCalledOnce();

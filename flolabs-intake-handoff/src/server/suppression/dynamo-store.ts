@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { normalizeEmail } from './normalize';
+import { normalizeEmail, normalizeTopic } from './normalize';
 import type { SuppressionDynamoClient, SuppressionStore, SuppressionStoreOptions } from './types';
 
 const EVENT_PREFIX = 'EVENT#';
@@ -18,7 +18,8 @@ export function createDynamoSuppressionStore(
   return {
     async isSuppressed(email, topic) {
       const normalizedEmail = normalizeEmail(email);
-      const prefixes = ['MARKETING#ALL#', ...(topic ? [`MARKETING#TOPIC#${encodeURIComponent(topic)}#`] : [])];
+      const normalizedTopic = topic === undefined ? undefined : normalizeTopic(topic);
+      const prefixes = ['MARKETING#ALL#', ...(normalizedTopic ? [`MARKETING#TOPIC#${encodeURIComponent(normalizedTopic)}#`] : [])];
       const results = await Promise.all(
         prefixes.map((prefix) =>
           client.query({
@@ -37,16 +38,11 @@ export function createDynamoSuppressionStore(
     async recordSuppression(record) {
       const normalizedEmail = normalizeEmail(record.email);
       if (record.normalizedEmail !== normalizedEmail) throw new Error('NORMALIZED_EMAIL_MISMATCH');
-      if (
-        record.scope === 'TOPIC' &&
-        (!record.topic?.trim() || record.topic.length > 128 || /[\u0000-\u001f\u007f]/.test(record.topic))
-      ) {
-        throw new Error('TOPIC_REQUIRED');
-      }
+      const topic = record.scope === 'TOPIC' ? normalizeTopic(record.topic ?? '') : undefined;
 
       await client.update({
         TableName: tableName,
-        Key: { pk: `EMAIL#${normalizedEmail}`, sk: scopeKey(record.reason, record.scope, record.topic) },
+        Key: { pk: `EMAIL#${normalizedEmail}`, sk: scopeKey(record.reason, record.scope, topic) },
         UpdateExpression:
           'SET #status = :active, #reason = :reason, #scope = :scope, #source = :source, eventId = :eventId, updatedAt = :now, createdAt = if_not_exists(createdAt, :now), occurredAt = :occurredAt, topic = :topic',
         ExpressionAttributeNames: {
@@ -63,7 +59,7 @@ export function createDynamoSuppressionStore(
           ':eventId': eventKey(record.eventId),
           ':now': now().toISOString(),
           ':occurredAt': record.occurredAt ?? null,
-          ':topic': record.topic ?? null,
+          ':topic': topic ?? null,
         },
       });
     },

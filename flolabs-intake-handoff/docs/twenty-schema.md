@@ -1,12 +1,22 @@
 # Twenty schema map (T1)
 
-Verified against the live instance on 2026-10-23 (`https://157-230-82-204.sslip.io`); updated after T2a on 2026-10-24.
-Machine-readable snapshots: `docs/snapshots/twenty-schema-2026-10-23.json` (T1), `-2026-10-24-t2a.json` (T2a), `-2026-10-24-t2c.json` (T2c site status) and `docs/snapshots/twenty-schema-2026-10-24-t2b.json` (current, after T2b Inquiry + Person consent; field ids, options, relations).
+Verified against the live instance on 2026-10-23 (`https://157-230-82-204.sslip.io`); schema updates and snapshots through 2026-10-24 are historical evidence, not a verification of the instance's current version.
+Machine-readable snapshots: `docs/snapshots/twenty-schema-2026-10-23.json` (T1), the `2026-10-24-t2a` through `t2e` snapshots (subsequent schema changes and metadata), and the later `t2c`/`t2d` snapshots for Site status and Inquiry changes. The latest saved metadata snapshot is `docs/snapshots/twenty-schema-2026-10-24-t2e.json`.
 Re-generate with `node --env-file=.env.local scripts/t1-schema-probe.mjs <out.json>` from `flolabs-intake-handoff/`.
 
-Live data at verification time: 5 People, 1 Application, 1 Site, 0 Attachments.
+T1 live data observed on 2026-10-23: 5 People, 1 Application, 1 Site, 0 Attachments.
 
-## Current structure (live)
+## Current access and count discrepancy (2026-10-27)
+
+The user reports that current workspace screenshots show 6 People and 3 Applications in their object views, but zero records in the Data Model screen's Records column. The repository's last saved metadata snapshot, `docs/snapshots/twenty-schema-2026-10-24-t2e.json`, also records 6 People and 3 Applications. These are separate observations; the snapshot does not explain the Data Model display, and neither count should be treated as proof of the other's correctness.
+
+This execution could not query the live workspace: opening `https://157-230-82-204.sslip.io` reached the sign-in page, and no `TWENTY_BASE_URL`/`TWENTY_API_KEY` was configured locally. The UI screenshots establish visibility only. The Accounts > Emails menu was not accessible for inspection, so mailbox connection status, workspace version, native email API availability, and API-key permissions remain unverified. The application authenticates its named GraphQL operations with `TWENTY_API_KEY`; its current client has no email/thread operations.
+
+The saved T2e metadata snapshot shows a `messageThreadTargets` relation on Person and no corresponding `messageThreadTargets` relation on the custom Application object (which has `agentChatThreadTargets`). This is schema-snapshot evidence only, not verification that the current workspace supports message/thread reads or writes. Do not add a custom relation or alter the schema without owner approval.
+
+To reconcile the displayed counts, an authorized read-only check should compare, in the same workspace and account, the People and Applications list query results with the Data Model metadata record counts, while noting filters, soft-deleted records, and permission scope. To verify email support, inspect that workspace's API schema/playground and Accounts > Emails state using authorized access; do not infer support from the menu or the Person relation alone.
+
+## Schema structure from saved live verification (2026-10-23; changes through 2026-10-24)
 
 ```mermaid
 erDiagram
