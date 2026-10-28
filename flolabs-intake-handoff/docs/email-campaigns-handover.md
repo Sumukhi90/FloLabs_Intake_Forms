@@ -16,12 +16,12 @@ Status as of 2026-10-27: **local HR suppression protection implemented; live acc
 
 - Added a local, persistent manual HR test-blocklist and wired it into the shared email send path so HR and marketing sends fail closed on a matching local entry or a suppression lookup error.
 - Added structured, PII-redacted audit output to the test send command and documented local-only scope, safety boundaries, and the blocked-send procedure.
-- Added tests for suppressed-recipient rejection before provider invocation, suppression lookup failure, persistence across store restarts, normalized addresses, and idempotent reason preservation.
+- Added tests for suppressed-recipient rejection before provider invocation, suppression lookup failure, persistence across store restarts, normalized addresses, idempotent reason preservation, explicit provider non-acceptance, and reply association using `References` without `In-Reply-To`.
 
 ## Verification performed
 
-- Full suite: `npm test` — **429 passed, 12 skipped** (30 test files passed, 3 skipped).
-- Focused mailbox suite: `npm test -- src/server/email/mailbox.test.ts` — **16 passed**.
+- Full suite: `npm test` — **431 passed, 12 skipped** (30 test files passed, 3 skipped).
+- Focused email/environment suite: `npm test -- src/server/email/mailbox.test.ts src/server/env.test.ts` — **43 passed**.
 - `npm run lint`, `npm run typecheck`, and `npm run build` passed after the current changes.
 - `git diff --check` passed. `npm run build:ses-feedback` was not run in this pass because AWS/SES is explicitly out of scope.
 - The HR suppression tests are mocked/local: they verify that a persisted `MANUAL_TEST_BLOCK` prevents the provider mock from being called and that suppression lookup failures fail closed. They do not prove a live mailbox or CRM integration.

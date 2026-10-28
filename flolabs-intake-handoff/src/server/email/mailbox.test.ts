@@ -313,8 +313,24 @@ describe('SMTP sending', () => {
     }, async () => {
       throw new Error(`socket timeout ${smtp.password}`);
     }).catch((error: unknown) => error);
-    expect(timedOut).toMatchObject({ code: 'SMTP_FAILED' });
+    expect(timedOut).toMatchObject({ code: 'SMTP_FAILED', providerInvoked: true });
     expect(String(timedOut)).not.toContain(smtp.password);
+    expect(store.listMessages()).toContainEqual(expect.objectContaining({ state: 'unknown' }));
+  });
+
+  it('records a provider response that did not accept the recipient as an unknown delivery', async () => {
+    const store = createStore();
+    const deliver = vi.fn(async () => ({ messageId: '<provider-response@example.test>', accepted: [] }));
+    const failure = await sendEmail(smtp, store, {
+      key: 'recipient-not-accepted',
+      to: 'approved@example.test',
+      subject: 'Test',
+      text: 'Safe test content',
+      purpose: 'HR_TEST',
+    }, deliver).catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ code: 'SMTP_FAILED', providerInvoked: true });
+    expect(deliver).toHaveBeenCalledOnce();
     expect(store.listMessages()).toContainEqual(expect.objectContaining({ state: 'unknown' }));
   });
 });
@@ -421,6 +437,61 @@ describe('IMAP parsing and synchronization', () => {
       password: smtp.password,
     }, store, factory)).toEqual({ imported: 0, duplicates: 1 });
     expect(fakeClient.logout).toHaveBeenCalledTimes(2);
+  });
+
+  it('associates replies by References when In-Reply-To is absent', async () => {
+    const store = createStore();
+    store.reserveOutbound({
+      key: 'outbound:referenced',
+      direction: 'outbound',
+      threadId: '<root@example.test>',
+      messageId: '<root@example.test>',
+      inReplyTo: null,
+      references: [],
+      from: smtp.username,
+      to: ['applicant@example.test'],
+      subject: 'Application follow-up',
+      date: new Date().toISOString(),
+      text: 'Original',
+      contactId: 'person-123',
+      applicationId: 'application-123',
+      providerId: null,
+      mailbox: null,
+      uidValidity: null,
+      uid: null,
+      contentHash: 'hash',
+      state: 'sent',
+    });
+    const referencesOnlyReply = reply
+      .replace('In-Reply-To: <original@flolabsinnovations.com>\r\n', '')
+      .replace('<original@flolabsinnovations.com>', '<root@example.test>');
+    const fakeClient = {
+      mailbox: { uidValidity: 2 },
+      connect: async () => undefined,
+      getMailboxLock: async () => ({ release: () => undefined }),
+      search: async () => [2],
+      async *fetch() {
+        yield {
+          uid: 2,
+          size: Buffer.byteLength(referencesOnlyReply),
+          source: Buffer.from(referencesOnlyReply),
+          internalDate: new Date('2026-05-12T10:00:00Z'),
+        };
+      },
+      logout: async () => undefined,
+    };
+
+    expect(await synchronizeInbox({
+      host: 'mail.example.test',
+      port: 993,
+      username: smtp.username,
+      password: smtp.password,
+    }, store, () => fakeClient)).toEqual({ imported: 1, duplicates: 0 });
+    expect(store.findByMessageId(['<reply-1@example.test>'])).toMatchObject({
+      threadId: '<root@example.test>',
+      contactId: 'person-123',
+      applicationId: 'application-123',
+    });
   });
 
   it('keeps unmatched inbound mail unassociated', async () => {
