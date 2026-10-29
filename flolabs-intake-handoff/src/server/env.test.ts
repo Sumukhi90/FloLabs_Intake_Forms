@@ -96,22 +96,18 @@ describe('parseEnv', () => {
     const base = {
       TWENTY_BASE_URL: 'https://crm.example.com',
       TWENTY_API_KEY: validKey,
-      CRM_EMAIL_IMAP_HOST: 'flolabsinnovations.com',
+      CRM_EMAIL_IMAP_HOST: 'mail.flolabsinnovations.com',
       CRM_EMAIL_IMAP_PORT: '993',
-      CRM_EMAIL_IMAP_USERNAME: 'crm.test1@flolabsinnovations.com',
+      CRM_EMAIL_IMAP_USERNAME: 'hr@flolabsinnovations.com',
       CRM_EMAIL_IMAP_PASSWORD: 'private-value',
-      CRM_EMAIL_SMTP_HOST: 'flolabsinnovations.com',
-      CRM_EMAIL_SMTP_PORT: '465',
-      CRM_EMAIL_SMTP_USERNAME: 'crm.test1@flolabsinnovations.com',
-      CRM_EMAIL_SMTP_PASSWORD: 'private-value',
-      CRM_EMAIL_ALLOWED_RECIPIENTS: 'crm.test1@flolabsinnovations.com, test@example.com',
+      CRM_EMAIL_ALLOWED_RECIPIENTS: 'authorized-test@example.com, test@example.com',
       CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
       CRM_EMAIL_TEST_COMMANDS_ENABLED: 'true',
       CRM_EMAIL_TEST_BLOCK_RECIPIENT: 'blocked-test@example.com',
     };
     expect(parseEnv(base)).toMatchObject({
       CRM_EMAIL_IMAP_PORT: 993,
-      CRM_EMAIL_SMTP_PORT: 465,
+      CRM_EMAIL_IMAP_HOST: 'mail.flolabsinnovations.com',
       CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
     });
     expect(parseEmailEnvironment({
@@ -123,11 +119,9 @@ describe('parseEnv', () => {
   });
 
   it.each([
-    { CRM_EMAIL_SMTP_HOST: 'flolabsinnovations.com' },
     { CRM_EMAIL_IMAP_PASSWORD: 'private-value' },
-    { CRM_EMAIL_SMTP_PORT: '587' },
     { CRM_EMAIL_IMAP_PORT: '143' },
-    { CRM_EMAIL_SMTP_HOST: 'flolabsinnovations.com', CRM_EMAIL_ALLOWED_RECIPIENTS: 'not-an-address' },
+    { MAILJET_API_KEY: 'partial-key', MAILJET_API_SECRET: 'partial-secret', MAILJET_FROM_EMAIL: 'hr@flolabsinnovations.com', MAILJET_REPLY_TO_EMAIL: 'hr@flolabsinnovations.com', CRM_EMAIL_ALLOWED_RECIPIENTS: 'not-an-address', CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite' },
   ])('rejects incomplete, non-TLS, or invalid mailbox settings', (mailSettings) => {
     const base = { TWENTY_BASE_URL: 'https://crm.example.com', TWENTY_API_KEY: validKey };
     expect(() => parseEnv({ ...base, ...mailSettings })).toThrow(EnvError);
@@ -139,10 +133,15 @@ describe('parseEnv', () => {
       parseEnv({
         TWENTY_BASE_URL: 'https://crm.example.com',
         TWENTY_API_KEY: validKey,
-        CRM_EMAIL_SMTP_HOST: 'flolabsinnovations.com',
-        CRM_EMAIL_SMTP_USERNAME: 'crm.test1@flolabsinnovations.com',
-        CRM_EMAIL_SMTP_PASSWORD: password,
-        CRM_EMAIL_SMTP_PORT: '465',
+        CRM_EMAIL_IMAP_HOST: 'mail.flolabsinnovations.com',
+        CRM_EMAIL_IMAP_USERNAME: 'hr@flolabsinnovations.com',
+        CRM_EMAIL_IMAP_PASSWORD: password,
+        CRM_EMAIL_IMAP_PORT: '993',
+        MAILJET_API_KEY: 'test-key',
+        MAILJET_API_SECRET: 'test-secret',
+        MAILJET_FROM_EMAIL: 'hr@flolabsinnovations.com',
+        MAILJET_REPLY_TO_EMAIL: 'hr@flolabsinnovations.com',
+        CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
       });
       expect.unreachable();
     } catch (error) {
@@ -153,15 +152,50 @@ describe('parseEnv', () => {
 
   it('validates mailbox sync configuration without requiring unrelated Twenty credentials', () => {
     const env = parseEmailEnvironment({
-      CRM_EMAIL_IMAP_HOST: 'flolabsinnovations.com',
+      CRM_EMAIL_IMAP_HOST: 'mail.flolabsinnovations.com',
       CRM_EMAIL_IMAP_PORT: '993',
-      CRM_EMAIL_IMAP_USERNAME: 'crm.test1@flolabsinnovations.com',
+      CRM_EMAIL_IMAP_USERNAME: 'hr@flolabsinnovations.com',
       CRM_EMAIL_IMAP_PASSWORD: 'private-value',
       CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
       CRM_EMAIL_TEST_COMMANDS_ENABLED: 'true',
     });
-    expect(env.CRM_EMAIL_IMAP_USERNAME).toBe('crm.test1@flolabsinnovations.com');
+    expect(env.CRM_EMAIL_IMAP_USERNAME).toBe('hr@flolabsinnovations.com');
     expect(() => parseEmailEnvironment({ CRM_EMAIL_IMAP_PASSWORD: 'private-value' })).toThrow(EnvError);
+  });
+
+  it('accepts complete Mailjet HR configuration with an allowlist and local store', () => {
+    const env = parseEmailEnvironment({
+      MAILJET_API_KEY: 'test-mailjet-key',
+      MAILJET_API_SECRET: 'private-mailjet-secret',
+      MAILJET_FROM_EMAIL: 'hr@flolabsinnovations.com',
+      MAILJET_REPLY_TO_EMAIL: 'hr@flolabsinnovations.com',
+      CRM_EMAIL_ALLOWED_RECIPIENTS: 'authorized-test@example.com',
+      CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
+    });
+    expect(env).toMatchObject({
+      MAILJET_FROM_EMAIL: 'hr@flolabsinnovations.com',
+      MAILJET_REPLY_TO_EMAIL: 'hr@flolabsinnovations.com',
+      CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
+    });
+  });
+
+  it('rejects partial Mailjet configuration, non-HR sender, or missing test allowlist', () => {
+    expect(() => parseEmailEnvironment({ MAILJET_API_KEY: 'test-mailjet-key' })).toThrow(/MAILJET_API_SECRET/);
+    expect(() => parseEmailEnvironment({
+      MAILJET_API_KEY: 'test-mailjet-key',
+      MAILJET_API_SECRET: 'private-mailjet-secret',
+      MAILJET_FROM_EMAIL: 'someone@example.com',
+      MAILJET_REPLY_TO_EMAIL: 'hr@flolabsinnovations.com',
+      CRM_EMAIL_ALLOWED_RECIPIENTS: 'authorized-test@example.com',
+      CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
+    })).toThrow(/MAILJET_FROM_EMAIL/);
+    expect(() => parseEmailEnvironment({
+      MAILJET_API_KEY: 'test-mailjet-key',
+      MAILJET_API_SECRET: 'private-mailjet-secret',
+      MAILJET_FROM_EMAIL: 'hr@flolabsinnovations.com',
+      MAILJET_REPLY_TO_EMAIL: 'hr@flolabsinnovations.com',
+      CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
+    })).toThrow(/CRM_EMAIL_ALLOWED_RECIPIENTS/);
   });
 
   it('accepts an explicit false value for disabled email test commands', () => {

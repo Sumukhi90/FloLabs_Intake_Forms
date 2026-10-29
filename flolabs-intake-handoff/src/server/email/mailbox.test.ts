@@ -28,6 +28,7 @@ const smtp = {
   port: 465 as const,
   username: 'crm.test1@example.test',
   password: 'never-log-this-secret',
+  senderEmail: 'crm.test1@example.test',
   allowedRecipients: ['approved@example.test'],
 };
 
@@ -36,7 +37,7 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
-describe('SMTP sending', () => {
+describe('outbound email safety', () => {
   it('restricts CLI mailbox storage to the local ignored data directory', () => {
     expect(resolveLocalEmailDatabasePath('.local/email.sqlite')).toContain('.local');
     expect(() => resolveLocalEmailDatabasePath('../outside.sqlite')).toThrow('EMAIL_DATABASE_PATH_MUST_BE_UNDER_LOCAL');
@@ -125,7 +126,7 @@ describe('SMTP sending', () => {
     reopenedStore.close();
   });
 
-  it('refuses an unapproved address and malformed messages before SMTP', async () => {
+  it('refuses an unapproved address and malformed messages before provider invocation', async () => {
     const deliver = vi.fn();
     await expect(sendEmail(smtp, createStore(), {
       key: 'not-approved',
@@ -277,7 +278,7 @@ describe('SMTP sending', () => {
     });
   });
 
-  it('records ambiguous SMTP failures and redacts credentials and provider error text', async () => {
+  it('records ambiguous provider failures and redacts credentials and provider error text', async () => {
     const store = createStore();
     const failure = await sendEmail(smtp, store, {
       key: 'failed',
@@ -313,12 +314,12 @@ describe('SMTP sending', () => {
     }, async () => {
       throw new Error(`socket timeout ${smtp.password}`);
     }).catch((error: unknown) => error);
-    expect(timedOut).toMatchObject({ code: 'SMTP_FAILED', providerInvoked: true });
+    expect(timedOut).toMatchObject({ code: 'DELIVERY_UNKNOWN', providerInvoked: true });
     expect(String(timedOut)).not.toContain(smtp.password);
     expect(store.listMessages()).toContainEqual(expect.objectContaining({ state: 'unknown' }));
   });
 
-  it('records a provider response that did not accept the recipient as an unknown delivery', async () => {
+  it('records a definitive provider rejection as failed, not uncertain delivery', async () => {
     const store = createStore();
     const deliver = vi.fn(async () => ({ messageId: '<provider-response@example.test>', accepted: [] }));
     const failure = await sendEmail(smtp, store, {
@@ -329,9 +330,67 @@ describe('SMTP sending', () => {
       purpose: 'HR_TEST',
     }, deliver).catch((error: unknown) => error);
 
-    expect(failure).toMatchObject({ code: 'SMTP_FAILED', providerInvoked: true });
+    expect(failure).toMatchObject({ code: 'PROVIDER_REJECTED', providerInvoked: true });
     expect(deliver).toHaveBeenCalledOnce();
-    expect(store.listMessages()).toContainEqual(expect.objectContaining({ state: 'unknown' }));
+    expect(store.listMessages()).toContainEqual(expect.objectContaining({ state: 'failed' }));
+  });
+
+  it('refuses Message-ID matches with conflicting thread or CRM associations', () => {
+    const store = createStore();
+    const email = (key: string, threadId: string, contactId: string): StoredEmail => ({
+      key,
+      direction: 'outbound',
+      threadId,
+      messageId: '<duplicate@example.test>',
+      inReplyTo: null,
+      references: [],
+      from: 'hr@example.test',
+      to: ['applicant@example.test'],
+      subject: 'Application follow-up',
+      date: new Date().toISOString(),
+      text: 'Original',
+      contactId,
+      applicationId: 'application-1',
+      providerId: null,
+      mailbox: null,
+      uidValidity: null,
+      uid: null,
+      contentHash: 'hash',
+      state: 'sent',
+    });
+    store.reserveOutbound(email('outbound:first', 'thread-1', 'person-1'));
+    store.reserveOutbound(email('outbound:second', 'thread-2', 'person-2'));
+
+    expect(store.findByMessageId(['<duplicate@example.test>'])).toBeNull();
+  });
+
+  it('matches a message ID only when the correspondent is part of the stored conversation', () => {
+    const store = createStore();
+    store.reserveOutbound({
+      key: 'outbound:correspondent',
+      direction: 'outbound',
+      threadId: '<original@example.test>',
+      messageId: '<original@example.test>',
+      inReplyTo: null,
+      references: [],
+      from: 'hr@example.test',
+      to: ['applicant@example.test'],
+      subject: 'Application follow-up',
+      date: new Date().toISOString(),
+      text: 'Original',
+      contactId: 'person-1',
+      applicationId: 'application-1',
+      providerId: null,
+      mailbox: null,
+      uidValidity: null,
+      uid: null,
+      contentHash: 'hash',
+      state: 'sent',
+    });
+
+    expect(store.findByMessageId(['<original@example.test>'], 'other@example.test')).toBeNull();
+    expect(store.findByMessageId(['<original@example.test>'], 'APPLICANT@example.test'))
+      .toMatchObject({ contactId: 'person-1' });
   });
 });
 
@@ -439,6 +498,37 @@ describe('IMAP parsing and synchronization', () => {
     expect(fakeClient.logout).toHaveBeenCalledTimes(2);
   });
 
+  it('de-duplicates the same inbound message after IMAP UIDVALIDITY changes', async () => {
+    const store = createStore();
+    const createClient = (uidValidity: bigint) => ({
+      mailbox: { uidValidity },
+      connect: async () => undefined,
+      getMailboxLock: async () => ({ release: () => undefined }),
+      search: async () => [8],
+      async *fetch() {
+        yield {
+          uid: 8,
+          size: Buffer.byteLength(reply),
+          source: Buffer.from(reply),
+          internalDate: new Date('2026-05-12T10:00:00Z'),
+        };
+      },
+      logout: async () => undefined,
+    });
+    const settings = {
+      host: 'mail.example.test',
+      port: 993 as const,
+      username: 'hr@example.test',
+      password: 'test-secret',
+    };
+
+    expect(await synchronizeInbox(settings, store, () => createClient(123n)))
+      .toEqual({ imported: 1, duplicates: 0 });
+    expect(await synchronizeInbox(settings, store, () => createClient(124n)))
+      .toEqual({ imported: 0, duplicates: 1 });
+    expect(store.listMessages()).toHaveLength(1);
+  });
+
   it('associates replies by References when In-Reply-To is absent', async () => {
     const store = createStore();
     store.reserveOutbound({
@@ -494,7 +584,7 @@ describe('IMAP parsing and synchronization', () => {
     });
   });
 
-  it('keeps unmatched inbound mail unassociated', async () => {
+  it('does not associate a reply with known headers from an unrelated sender', async () => {
     const store = createStore();
     store.reserveOutbound({
       key: 'outbound:unmatched',
@@ -517,21 +607,23 @@ describe('IMAP parsing and synchronization', () => {
       contentHash: 'hash',
       state: 'sent',
     });
-    const unmatchedReply = reply
-      .replace('In-Reply-To: <original@flolabsinnovations.com>\r\n', '')
-      .replace('References: <original@flolabsinnovations.com>\r\n', '');
+    const unrelatedReply = reply.replace('From: applicant@example.test', 'From: other@example.test');
     const fakeClient = {
       mailbox: { uidValidity: 1 },
       connect: async () => undefined,
       getMailboxLock: async () => ({ release: () => undefined }),
       search: async () => [1],
       async *fetch() {
-        yield { uid: 1, size: Buffer.byteLength(unmatchedReply), source: Buffer.from(unmatchedReply), internalDate: new Date() };
+        yield { uid: 1, size: Buffer.byteLength(unrelatedReply), source: Buffer.from(unrelatedReply), internalDate: new Date() };
       },
       logout: async () => undefined,
     };
     await synchronizeInbox({ host: 'mail.example.test', port: 993, username: smtp.username, password: smtp.password }, store, () => fakeClient);
-    expect(store.findByMessageId(['<reply-1@example.test>'])).toMatchObject({ contactId: null, applicationId: null });
+    expect(store.findByMessageId(['<reply-1@example.test>'])).toMatchObject({
+      threadId: '<reply-1@example.test>',
+      contactId: null,
+      applicationId: null,
+    });
   });
 
   it('rejects oversized and malformed messages with safe errors', async () => {

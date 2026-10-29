@@ -22,7 +22,7 @@ Besides the pipeline, every FloLabs website can show a **Contact Us** form and a
 
 **What the system does automatically:** checks every answer, blocks bots and spam, saves each submission in Twenty, links it to the right person, application and website, and writes a readable summary of the answers.
 
-**What HR still does by hand (for now):** send the Form 1-3 links, move applicants between pipeline stages (Lead Status), answer Contact Us messages, and decide on applicants. Automatic production email and automatic stage changes remain deferred. A separate SMTP command exists only for an explicitly allowlisted test recipient; it is not the production HR workflow.
+**What HR still does by hand (for now):** send the Form 1-3 links, move applicants between pipeline stages (Lead Status), answer Contact Us messages, and decide on applicants. Automatic production email and automatic stage changes remain deferred. A separate Mailjet HTTPS command exists only for an explicitly allowlisted test recipient; it is not the production HR workflow.
 
 ## 2. The forms at a glance
 
@@ -313,4 +313,4 @@ sudo -u flolabs-forms node --env-file=/opt/flolabs-forms/.env.production \
 
 Use `contacted` for Forms 1 and 2 or `masterclass` for Form 3. Review the recipient, subject, programs, and links before sending. This command only creates a draft; it never sends email. Personal links expire 21 days after creation.
 
-The allowlist-gated test SMTP/IMAP procedure is documented in [email-local-testing.md](./email-local-testing.md). It must only be used with an approved test mailbox and test Application; do not use it to contact applicants.
+The allowlist-gated Mailjet/IMAP procedure is documented in [email-local-testing.md](./email-local-testing.md). It must only be used with an approved test mailbox and test Application; do not use it to contact applicants.

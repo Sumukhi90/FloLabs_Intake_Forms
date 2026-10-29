@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { getEnv } from '../src/server/env.ts';
 import { EmailSendError, createSqliteEmailStore, resolveLocalEmailDatabasePath, sendEmail } from '../src/server/email/mailbox.ts';
+import { createMailjetDelivery } from '../src/server/email/mailjet.ts';
 import { createHrEmailDraftWithAssociationForApplication, HrEmailWorkflowError } from '../src/server/forms/hr-email-workflow.ts';
 import { TwentyError, createTwentyClient } from '../src/server/twenty/client.ts';
 
@@ -19,13 +20,14 @@ if (env.NODE_ENV === 'production' || env.CRM_EMAIL_TEST_COMMANDS_ENABLED !== 'tr
 }
 if (
   !env.LINK_TOKEN_SECRET ||
-  !env.CRM_EMAIL_SMTP_HOST ||
-  !env.CRM_EMAIL_SMTP_USERNAME ||
-  !env.CRM_EMAIL_SMTP_PASSWORD ||
+  !env.MAILJET_API_KEY ||
+  !env.MAILJET_API_SECRET ||
+  !env.MAILJET_FROM_EMAIL ||
+  !env.MAILJET_REPLY_TO_EMAIL ||
   !env.CRM_EMAIL_DATABASE_PATH ||
   !env.CRM_EMAIL_ALLOWED_RECIPIENTS
 ) {
-  console.error('HR test send is not configured. Set the link secret, SMTP settings, test recipient allowlist, and local database path.');
+  console.error('HR test send is not configured. Set the link secret, Mailjet API credentials, approved HR sender/Reply-To, test recipient allowlist, and local database path.');
   process.exit(1);
 }
 
@@ -44,36 +46,39 @@ try {
   personIdForAudit = result.contactId;
   recipientKnown = true;
   const sent = await sendEmail({
-    host: env.CRM_EMAIL_SMTP_HOST,
-    port: 465,
-    username: env.CRM_EMAIL_SMTP_USERNAME,
-    password: env.CRM_EMAIL_SMTP_PASSWORD,
+    senderEmail: env.MAILJET_FROM_EMAIL,
     allowedRecipients: env.CRM_EMAIL_ALLOWED_RECIPIENTS.split(',').map((address) => address.trim()).filter(Boolean),
   }, store, {
     key: idempotencyKey,
     to: result.draft.to,
-    subject: result.draft.subject,
+    subject: `[CRM EMAIL TEST ${correlationId}] ${result.draft.subject}`,
     text: result.draft.body,
     purpose: 'HR_TEST',
     contactId: result.contactId,
     applicationId: result.applicationId,
-  });
+  }, createMailjetDelivery({
+    apiKey: env.MAILJET_API_KEY,
+    apiSecret: env.MAILJET_API_SECRET,
+    senderEmail: env.MAILJET_FROM_EMAIL,
+    replyToEmail: env.MAILJET_REPLY_TO_EMAIL,
+  }));
   console.log(JSON.stringify({
     timestamp: new Date().toISOString(),
     correlationId,
     operation: 'hr_email_send',
-    status: 'smtp_accepted',
+    status: 'provider_accepted',
     applicationId: applicationIdForAudit,
     personId: personIdForAudit,
     recipient: '[redacted]',
     suppressionDecision: 'not_suppressed',
     providerInvoked: true,
     retryCount: 0,
-    executionMode: 'configured_test_smtp',
+    executionMode: 'mailjet_api',
     messageId: sent.messageId,
+    providerMessageId: sent.providerMessageId,
     deliveryConfirmed: false,
   }));
-  console.log('SMTP accepted the HR test message. This does not confirm recipient delivery; synchronize the mailbox to verify receipt.');
+  console.log('Mailjet accepted the HR test message. This does not confirm recipient delivery; verify the controlled inbox before any retry.');
 } catch (error) {
   if (error instanceof EmailSendError) {
     console.error(JSON.stringify({
@@ -89,9 +94,9 @@ try {
       error: error.code,
       providerInvoked: error.providerInvoked,
       retryCount: 0,
-      executionMode: 'configured_test_smtp',
+      executionMode: 'mailjet_api',
     }));
-    console.error(`HR test send stopped (${error.code}). Check the allowlist and local email database before attempting any retry.`);
+    console.error(`HR test send stopped (${error.code}). Review the sanitized result and verify provider/mailbox status before any retry.`);
   } else if (error instanceof TwentyError) {
     console.error(JSON.stringify({
       timestamp: new Date().toISOString(),
@@ -103,7 +108,7 @@ try {
       error: error.code,
       providerInvoked: false,
       retryCount: 0,
-      executionMode: 'configured_test_smtp',
+      executionMode: 'mailjet_api',
     }));
     console.error(`Twenty lookup failed (${error.code}); no message was sent.`);
   } else if (error instanceof HrEmailWorkflowError) {
@@ -117,7 +122,7 @@ try {
       error: 'HR_WORKFLOW_FAILED',
       providerInvoked: false,
       retryCount: 0,
-      executionMode: 'configured_test_smtp',
+      executionMode: 'mailjet_api',
     }));
     console.error(`${error.message} No message was sent.`);
   } else {
@@ -131,7 +136,7 @@ try {
       error: 'UNEXPECTED_FAILURE',
       providerInvoked: false,
       retryCount: 0,
-      executionMode: 'configured_test_smtp',
+      executionMode: 'mailjet_api',
     }));
     console.error('HR test send failed. No provider details or credentials were logged.');
   }

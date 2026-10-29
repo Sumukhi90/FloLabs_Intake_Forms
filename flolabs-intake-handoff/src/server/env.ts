@@ -26,14 +26,14 @@ const emailSettingsShape = {
   CRM_EMAIL_IMAP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
   CRM_EMAIL_IMAP_USERNAME: z.string().email().optional(),
   CRM_EMAIL_IMAP_PASSWORD: z.string().min(1).optional(),
-  CRM_EMAIL_SMTP_HOST: z.string().min(1).optional(),
-  CRM_EMAIL_SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
-  CRM_EMAIL_SMTP_USERNAME: z.string().email().optional(),
-  CRM_EMAIL_SMTP_PASSWORD: z.string().min(1).optional(),
   CRM_EMAIL_ALLOWED_RECIPIENTS: z.string().optional(),
   CRM_EMAIL_DATABASE_PATH: z.string().min(1).optional(),
   CRM_EMAIL_TEST_COMMANDS_ENABLED: z.enum(['true', 'false']).optional(),
   CRM_EMAIL_TEST_BLOCK_RECIPIENT: z.string().email().optional(),
+  MAILJET_API_KEY: z.string().min(1).optional(),
+  MAILJET_API_SECRET: z.string().min(1).optional(),
+  MAILJET_FROM_EMAIL: z.string().email().optional(),
+  MAILJET_REPLY_TO_EMAIL: z.string().email().optional(),
 };
 const emailSettingsSchema = z.object(emailSettingsShape);
 type EmailSettings = z.infer<typeof emailSettingsSchema>;
@@ -45,24 +45,27 @@ function emailConfigIssues(env: EmailSettings): EmailConfigIssue[] {
   if (imapSettings.some(Boolean) && !imapSettings.every(Boolean)) {
     issues.push({ path: 'CRM_EMAIL_IMAP_PASSWORD', message: 'all IMAP settings must be configured together' });
   }
-  const smtpSettings = [env.CRM_EMAIL_SMTP_HOST, env.CRM_EMAIL_SMTP_PORT, env.CRM_EMAIL_SMTP_USERNAME, env.CRM_EMAIL_SMTP_PASSWORD];
-  if (smtpSettings.some(Boolean) && !smtpSettings.every(Boolean)) {
-    issues.push({ path: 'CRM_EMAIL_SMTP_PASSWORD', message: 'all SMTP settings must be configured together' });
+  const mailjetSettings = [env.MAILJET_API_KEY, env.MAILJET_API_SECRET, env.MAILJET_FROM_EMAIL, env.MAILJET_REPLY_TO_EMAIL];
+  if (mailjetSettings.some(Boolean) && !mailjetSettings.every(Boolean)) {
+    issues.push({ path: 'MAILJET_API_SECRET', message: 'Mailjet API key, secret, sender, and Reply-To must be configured together' });
   }
-  if ((env.CRM_EMAIL_IMAP_HOST || env.CRM_EMAIL_SMTP_HOST) && !env.CRM_EMAIL_DATABASE_PATH) {
+  if (env.MAILJET_API_KEY && env.MAILJET_FROM_EMAIL?.toLowerCase() !== 'hr@flolabsinnovations.com') {
+    issues.push({ path: 'MAILJET_FROM_EMAIL', message: 'the approved HR sender must be hr@flolabsinnovations.com' });
+  }
+  if (env.MAILJET_API_KEY && env.MAILJET_REPLY_TO_EMAIL?.toLowerCase() !== 'hr@flolabsinnovations.com') {
+    issues.push({ path: 'MAILJET_REPLY_TO_EMAIL', message: 'the approved HR Reply-To must be hr@flolabsinnovations.com' });
+  }
+  if ((env.CRM_EMAIL_IMAP_HOST || env.MAILJET_API_KEY) && !env.CRM_EMAIL_DATABASE_PATH) {
     issues.push({ path: 'CRM_EMAIL_DATABASE_PATH', message: 'required when email transport is configured' });
   }
-  if (env.CRM_EMAIL_SMTP_HOST) {
+  if (env.MAILJET_API_KEY) {
     const recipients = env.CRM_EMAIL_ALLOWED_RECIPIENTS?.split(',').map((address) => address.trim()).filter(Boolean) ?? [];
     if (!recipients.length || !recipients.every((address) => z.string().email().safeParse(address).success)) {
-      issues.push({ path: 'CRM_EMAIL_ALLOWED_RECIPIENTS', message: 'a comma-separated list of valid test recipients is required for SMTP' });
+      issues.push({ path: 'CRM_EMAIL_ALLOWED_RECIPIENTS', message: 'a comma-separated list of valid test recipients is required for outbound email' });
     }
   }
   if (env.CRM_EMAIL_IMAP_PORT && env.CRM_EMAIL_IMAP_PORT !== 993) {
     issues.push({ path: 'CRM_EMAIL_IMAP_PORT', message: 'IMAP must use port 993 with implicit TLS' });
-  }
-  if (env.CRM_EMAIL_SMTP_PORT && env.CRM_EMAIL_SMTP_PORT !== 465) {
-    issues.push({ path: 'CRM_EMAIL_SMTP_PORT', message: 'SMTP must use port 465 with implicit TLS' });
   }
   return issues;
 }
