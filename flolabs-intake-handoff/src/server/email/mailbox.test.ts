@@ -408,6 +408,19 @@ describe('IMAP parsing and synchronization', () => {
     'Thanks, I completed the form.',
   ].join('\r\n');
 
+  it('refuses to connect to the live HR mailbox during test synchronization', async () => {
+    const createClient = vi.fn();
+    const failure = await synchronizeInbox({
+      host: 'mail.example.test',
+      port: 993,
+      username: ' HR@FloLabsInnovations.com ',
+      password: 'test-secret',
+    }, createStore(), createClient).catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ code: 'LIVE_HR_MAILBOX_FORBIDDEN' });
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
   it('extracts reply headers and plain text while ignoring HTML', async () => {
     const multipartReply = reply.replace(
       'Content-Type: text/plain; charset=utf-8\r\n\r\nThanks, I completed the form.',

@@ -496,7 +496,7 @@ export async function sendEmail(
 }
 
 export class EmailSyncError extends Error {
-  constructor(readonly code: 'IMAP_FAILED' | 'MESSAGE_TOO_LARGE' | 'INVALID_MESSAGE') {
+  constructor(readonly code: 'IMAP_FAILED' | 'MESSAGE_TOO_LARGE' | 'INVALID_MESSAGE' | 'LIVE_HR_MAILBOX_FORBIDDEN') {
     super(`Email synchronization failed: ${code}`);
     this.name = 'EmailSyncError';
   }
@@ -571,6 +571,9 @@ export async function synchronizeInbox(
       greetingTimeout: 10_000,
     }),
 ): Promise<{ imported: number; duplicates: number }> {
+  if (settings.username.trim().toLowerCase() === 'hr@flolabsinnovations.com') {
+    throw new EmailSyncError('LIVE_HR_MAILBOX_FORBIDDEN');
+  }
   const client = createClient(settings);
   const mailboxName = settings.mailbox?.trim() || 'INBOX';
   const mailboxIdentity = JSON.stringify([settings.username.trim().toLowerCase(), mailboxName]);

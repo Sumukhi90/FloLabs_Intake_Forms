@@ -2,7 +2,7 @@
 
 ## Status and boundaries
 
-The HR workflow can generate copyable drafts and a manually invoked, allowlist-gated Mailjet HTTPS test send. IMAP synchronization imports plain-text messages from a dedicated test mailbox into a local SQLite database and groups replies only when `In-Reply-To` or `References` matches a stored message ID from the same correspondent. A reply to an HR test message carries forward its original Person and Application IDs in the local database. Never connect the real HR inbox during acceptance testing.
+The HR workflow can generate copyable drafts and a manually invoked, allowlist-gated Mailjet HTTPS test send. IMAP synchronization imports plain-text messages from a dedicated test mailbox into a local SQLite database and groups replies only when `In-Reply-To` or `References` matches a stored message ID from the same correspondent. A reply to an HR test message carries forward its original Person and Application IDs in the local database. The test synchronizer refuses the live `hr@flolabsinnovations.com` username before opening a network connection.
 
 This does **not** create or display email threads inside Twenty. The inspected project client supports person and application operations but has no tenant-verified email-message/thread mutation or query operation. The saved T2e metadata snapshot shows a `messageThreadTargets` relation on Person but none on the custom Application object; this does not verify usable message APIs in the current workspace. The deployed workspace's version, schema, API permissions, and mailbox connection have not been verified. The local SQLite database is an application-level test representation, not a CRM API or production deployment. Bulk marketing campaigns remain deferred.
 
