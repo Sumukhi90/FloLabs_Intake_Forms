@@ -1,11 +1,12 @@
 # Email & Campaigns handover
 
-Status as of 2026-10-27: **local HR suppression protection implemented; live acceptance blocked by missing access/configuration**.
+Status as of 2026-10-30: **local HR test implementation available; live acceptance blocked by missing credentials, permissions, and approvals**.
 
 ## What exists
 
-- The HR workflow generates drafts. A separate, non-production Mailjet HTTPS test command requires an explicit recipient allowlist. It is not the regular applicant notification workflow.
+- The HR workflow generates drafts. A separate, non-production Mailjet HTTPS test command requires an explicit recipient allowlist. It is not the regular applicant notification workflow. Initial acceptance must use the dedicated test mailbox; the real HR inbox must not be connected.
 - The server-only mailbox module implements provider delivery, IMAP UID/UIDVALIDITY synchronization, parsing, Message-ID reply threading, deduplication, and a local SQLite test store. It does not write email messages or threads to Twenty.
+- IMAP synchronization now selects an administrator-configurable folder (`CRM_EMAIL_IMAP_MAILBOX`, default `INBOX`) and explicitly requires TLS certificate and hostname validation. Use only the dedicated acceptance mailbox, never the existing HR inbox.
 - HR test outbound uses Mailjet Send API v3.1 over HTTPS with the fixed HR sender and Reply-To. The implementation is locally mocked only; API credentials, sender verification and live provider acceptance remain unverified.
 - HR test sends now check a persistent, local SQLite suppression table immediately before outbound reservation/provider invocation. The test-only `block-hr-email:test` command records `MANUAL_TEST_BLOCK`; duplicate block requests preserve the original reason. Suppression lookup failures fail closed. These local entries are not synced with Twenty or the separate marketing suppression backend and are not production suppression storage.
 - The HR test command emits structured JSON audit events to stdout/stderr with a correlation ID, UTC timestamp, CRM IDs when available, redacted recipient, outcome, suppression reason, provider-invocation status, retry count, and test execution mode. It does not retain a separate durable audit log. Provider acceptance is recorded separately from inbox delivery confirmation.
@@ -23,12 +24,12 @@ Status as of 2026-10-27: **local HR suppression protection implemented; live acc
 
 ## Verification performed
 
-- Full suite: 31 test files passed, 3 skipped; 444 tests passed, 12 skipped.
-- Focused Mailjet/email/environment suite: 3 test files passed; 56 tests passed.
+- Full suite: 31 test files passed, 3 skipped; 445 tests passed, 12 skipped.
+- Focused Mailjet/email/environment suite: 3 test files passed; 57 tests passed.
 - `npm run lint`, `npm run typecheck`, and `npm run build` passed. Next.js emitted a non-fatal warning that it found a parent `package-lock.json` outside this Git repository.
 - `git diff --check` passed. `npm run build:ses-feedback` was not run because AWS/SES is explicitly out of scope.
 - The HR suppression tests are mocked/local: they verify that a persisted `MANUAL_TEST_BLOCK` prevents the provider mock from being called and that suppression lookup failures fail closed. They do not prove a live mailbox or CRM integration.
-- No live CRM read/write, mailbox connection, Mailjet send, email receive, or reply test was performed. No test Applications or People were created and no recipient was added to the configured local test blocklist. No email was sent and no CRM record changed. `.env.local` is absent; mailbox, CRM, and Mailjet configuration must be provisioned securely before live verification.
+- No live CRM read/write, mailbox connection, Mailjet send, email receive, or reply test was performed. No test Applications or People were created and no recipient was added to the configured local test blocklist. No email was sent and no CRM record changed. `.env.local` is absent; dedicated test mailbox, CRM, and Mailjet configuration must be provisioned securely before live verification.
 
 ## Required access and approvals
 
@@ -49,8 +50,8 @@ See [email-access-request.md](./email-access-request.md) for a concise, ready-to
 
 ### Mailbox owner / operations
 
-- Provision HR IMAP credentials locally (never in chat or source) using `CRM_EMAIL_IMAP_HOST=mail.flolabsinnovations.com`, `CRM_EMAIL_IMAP_PORT=993`, `CRM_EMAIL_IMAP_USERNAME`, and `CRM_EMAIL_IMAP_PASSWORD`. Authorize execution-host network access using implicit TLS; do not disable certificate checks.
-- Provision Mailjet credentials locally using `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_FROM_EMAIL=hr@flolabsinnovations.com`, and `MAILJET_REPLY_TO_EMAIL=hr@flolabsinnovations.com`. Verify sender/domain status and allow the explicitly approved test recipient in `CRM_EMAIL_ALLOWED_RECIPIENTS`.
+- Provision credentials and exact connection settings for the dedicated test mailbox locally using `CRM_EMAIL_IMAP_HOST`, `CRM_EMAIL_IMAP_PORT`, `CRM_EMAIL_IMAP_MAILBOX`, `CRM_EMAIL_IMAP_USERNAME`, and `CRM_EMAIL_IMAP_PASSWORD`. Never connect the real HR inbox during acceptance. Authorize execution-host network access using implicit TLS and validate the certificate hostname.
+- Provision Mailjet credentials locally using `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `MAILJET_FROM_EMAIL=hr@flolabsinnovations.com`, and `MAILJET_REPLY_TO_EMAIL=hr@flolabsinnovations.com`. Verify and authorize the sender/domain and approve the dedicated test recipient in `CRM_EMAIL_ALLOWED_RECIPIENTS` before any send.
 - Confirm the test mailbox is available under Accounts > Emails only for inspection. Do not connect or alter CRM settings without authorization.
 
 ### Test-record owner

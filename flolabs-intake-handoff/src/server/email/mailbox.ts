@@ -548,31 +548,41 @@ export type EmailImapClient = {
   mailbox: false | { uidValidity: number | bigint };
 };
 
+type EmailImapSettings = {
+  host: string;
+  port: 993;
+  username: string;
+  password: string;
+  mailbox?: string;
+};
+
 export async function synchronizeInbox(
-  settings: { host: string; port: 993; username: string; password: string },
+  settings: EmailImapSettings,
   store: EmailStore,
-  createClient: (settings: { host: string; port: 993; username: string; password: string }) => EmailImapClient = (config) =>
+  createClient: (settings: EmailImapSettings) => EmailImapClient = (config) =>
     new ImapFlow({
       host: config.host,
       port: config.port,
       secure: true,
       auth: { user: config.username, pass: config.password },
+      tls: { rejectUnauthorized: true, servername: config.host },
       logger: false,
       socketTimeout: 20_000,
       greetingTimeout: 10_000,
     }),
 ): Promise<{ imported: number; duplicates: number }> {
   const client = createClient(settings);
+  const mailboxName = settings.mailbox?.trim() || 'INBOX';
+  const mailboxIdentity = JSON.stringify([settings.username.trim().toLowerCase(), mailboxName]);
   let operationFailed = false;
   try {
     await client.connect();
-    const lock = await client.getMailboxLock('INBOX');
+    const lock = await client.getMailboxLock(mailboxName);
     try {
       const mailbox = client.mailbox;
       if (!mailbox) throw new EmailSyncError('IMAP_FAILED');
       const uidValidity = String(mailbox.uidValidity);
-      const mailboxAddress = settings.username.trim().toLowerCase();
-      const lastUid = store.getCursor(mailboxAddress, uidValidity);
+      const lastUid = store.getCursor(mailboxIdentity, uidValidity);
       const uids = await client.search({ uid: `${lastUid + 1}:*` }, { uid: true });
       if (!uids || !uids.length) return { imported: 0, duplicates: 0 };
       let imported = 0;
@@ -585,7 +595,7 @@ export async function synchronizeInbox(
           ? [...new Set([parsed.inReplyTo, ...parsed.references])]
           : [...parsed.references].reverse();
         const parent = store.findByMessageId(references, parsed.from);
-        const messageUidKey = `${mailboxAddress}:${uidValidity}:${message.uid}`;
+        const messageUidKey = `${mailboxIdentity}:${uidValidity}:${message.uid}`;
         const id = parsed.messageId?.trim();
         const threadId = parent?.threadId ?? id ?? `imap:${createHash('sha256').update(messageUidKey).digest('hex')}`;
         const record: StoredEmail = {
@@ -596,7 +606,7 @@ export async function synchronizeInbox(
           contactId: parent?.contactId ?? null,
           applicationId: parent?.applicationId ?? null,
           providerId: null,
-          mailbox: mailboxAddress,
+          mailbox: mailboxIdentity,
           uidValidity,
           uid: message.uid,
           state: 'received',

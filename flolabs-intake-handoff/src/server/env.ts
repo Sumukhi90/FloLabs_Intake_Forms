@@ -24,6 +24,7 @@ export const isAllowedTwentyUrl = (value: string): boolean => {
 const emailSettingsShape = {
   CRM_EMAIL_IMAP_HOST: z.string().min(1).optional(),
   CRM_EMAIL_IMAP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+  CRM_EMAIL_IMAP_MAILBOX: z.string().trim().min(1).optional(),
   CRM_EMAIL_IMAP_USERNAME: z.string().email().optional(),
   CRM_EMAIL_IMAP_PASSWORD: z.string().min(1).optional(),
   CRM_EMAIL_ALLOWED_RECIPIENTS: z.string().optional(),
@@ -41,7 +42,13 @@ type EmailConfigIssue = { path: keyof EmailSettings; message: string };
 
 function emailConfigIssues(env: EmailSettings): EmailConfigIssue[] {
   const issues: EmailConfigIssue[] = [];
-  const imapSettings = [env.CRM_EMAIL_IMAP_HOST, env.CRM_EMAIL_IMAP_PORT, env.CRM_EMAIL_IMAP_USERNAME, env.CRM_EMAIL_IMAP_PASSWORD];
+  const imapSettings = [
+    env.CRM_EMAIL_IMAP_HOST,
+    env.CRM_EMAIL_IMAP_PORT,
+    env.CRM_EMAIL_IMAP_MAILBOX,
+    env.CRM_EMAIL_IMAP_USERNAME,
+    env.CRM_EMAIL_IMAP_PASSWORD,
+  ];
   if (imapSettings.some(Boolean) && !imapSettings.every(Boolean)) {
     issues.push({ path: 'CRM_EMAIL_IMAP_PASSWORD', message: 'all IMAP settings must be configured together' });
   }

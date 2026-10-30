@@ -98,6 +98,7 @@ describe('parseEnv', () => {
       TWENTY_API_KEY: validKey,
       CRM_EMAIL_IMAP_HOST: 'mail.flolabsinnovations.com',
       CRM_EMAIL_IMAP_PORT: '993',
+      CRM_EMAIL_IMAP_MAILBOX: 'Acceptance',
       CRM_EMAIL_IMAP_USERNAME: 'hr@flolabsinnovations.com',
       CRM_EMAIL_IMAP_PASSWORD: 'private-value',
       CRM_EMAIL_ALLOWED_RECIPIENTS: 'authorized-test@example.com, test@example.com',
@@ -107,6 +108,7 @@ describe('parseEnv', () => {
     };
     expect(parseEnv(base)).toMatchObject({
       CRM_EMAIL_IMAP_PORT: 993,
+      CRM_EMAIL_IMAP_MAILBOX: 'Acceptance',
       CRM_EMAIL_IMAP_HOST: 'mail.flolabsinnovations.com',
       CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
     });
@@ -121,6 +123,7 @@ describe('parseEnv', () => {
   it.each([
     { CRM_EMAIL_IMAP_PASSWORD: 'private-value' },
     { CRM_EMAIL_IMAP_PORT: '143' },
+    { CRM_EMAIL_IMAP_MAILBOX: 'Acceptance' },
     { MAILJET_API_KEY: 'partial-key', MAILJET_API_SECRET: 'partial-secret', MAILJET_FROM_EMAIL: 'hr@flolabsinnovations.com', MAILJET_REPLY_TO_EMAIL: 'hr@flolabsinnovations.com', CRM_EMAIL_ALLOWED_RECIPIENTS: 'not-an-address', CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite' },
   ])('rejects incomplete, non-TLS, or invalid mailbox settings', (mailSettings) => {
     const base = { TWENTY_BASE_URL: 'https://crm.example.com', TWENTY_API_KEY: validKey };
@@ -154,12 +157,14 @@ describe('parseEnv', () => {
     const env = parseEmailEnvironment({
       CRM_EMAIL_IMAP_HOST: 'mail.flolabsinnovations.com',
       CRM_EMAIL_IMAP_PORT: '993',
+      CRM_EMAIL_IMAP_MAILBOX: 'INBOX',
       CRM_EMAIL_IMAP_USERNAME: 'hr@flolabsinnovations.com',
       CRM_EMAIL_IMAP_PASSWORD: 'private-value',
       CRM_EMAIL_DATABASE_PATH: '.local/email.sqlite',
       CRM_EMAIL_TEST_COMMANDS_ENABLED: 'true',
     });
     expect(env.CRM_EMAIL_IMAP_USERNAME).toBe('hr@flolabsinnovations.com');
+    expect(env.CRM_EMAIL_IMAP_MAILBOX).toBe('INBOX');
     expect(() => parseEmailEnvironment({ CRM_EMAIL_IMAP_PASSWORD: 'private-value' })).toThrow(EnvError);
   });
 

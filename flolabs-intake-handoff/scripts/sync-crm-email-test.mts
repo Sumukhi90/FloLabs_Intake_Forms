@@ -22,6 +22,7 @@ try {
   const result = await synchronizeInbox({
     host: env.CRM_EMAIL_IMAP_HOST,
     port: 993,
+    mailbox: env.CRM_EMAIL_IMAP_MAILBOX,
     username: env.CRM_EMAIL_IMAP_USERNAME,
     password: env.CRM_EMAIL_IMAP_PASSWORD,
   }, store);

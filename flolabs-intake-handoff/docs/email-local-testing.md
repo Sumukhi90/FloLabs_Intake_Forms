@@ -1,8 +1,8 @@
-# Local HR mailbox integration
+# Local HR email test integration
 
 ## Status and boundaries
 
-The HR workflow can generate copyable drafts and a manually invoked, allowlist-gated Mailjet HTTPS test send. IMAP synchronization imports plain-text messages into a local SQLite database and groups replies only when `In-Reply-To` or `References` matches a stored message ID. A reply to an HR message carries forward that original message's Twenty person and Application IDs in the local database.
+The HR workflow can generate copyable drafts and a manually invoked, allowlist-gated Mailjet HTTPS test send. IMAP synchronization imports plain-text messages from a dedicated test mailbox into a local SQLite database and groups replies only when `In-Reply-To` or `References` matches a stored message ID from the same correspondent. A reply to an HR test message carries forward its original Person and Application IDs in the local database. Never connect the real HR inbox during acceptance testing.
 
 This does **not** create or display email threads inside Twenty. The inspected project client supports person and application operations but has no tenant-verified email-message/thread mutation or query operation. The saved T2e metadata snapshot shows a `messageThreadTargets` relation on Person but none on the custom Application object; this does not verify usable message APIs in the current workspace. The deployed workspace's version, schema, API permissions, and mailbox connection have not been verified. The local SQLite database is an application-level test representation, not a CRM API or production deployment. Bulk marketing campaigns remain deferred.
 
@@ -14,12 +14,13 @@ The local HR blocklist is test-only and does not synchronize with Twenty or the 
 
 ## Backend-only configuration
 
-Copy `.env.example` to `.env.local` and configure these values locally. `.env*`, `.local/`, and SQLite databases are ignored by Git. Obtain Mailjet credentials from the account administrator and place them in the approved local secret store; do not put credentials in source, shell arguments/history, frontend variables, screenshots, or logs.
+Copy `.env.example` to `.env.local` and configure these values locally. Replace the IMAP host, port, username, and folder as instructed by the mailbox administrator; use only the dedicated test mailbox, never the live HR inbox. `.env*`, `.local/`, and SQLite databases are ignored by Git. Obtain Mailjet credentials from the account administrator and place them in the approved local secret store; the HR sender must be verified and explicitly approved before sending. Do not put credentials in source, shell arguments/history, frontend variables, screenshots, or logs.
 
 ```dotenv
-CRM_EMAIL_IMAP_HOST=mail.flolabsinnovations.com
+CRM_EMAIL_IMAP_HOST=<administrator-confirmed-test-imap-host>
 CRM_EMAIL_IMAP_PORT=993
-CRM_EMAIL_IMAP_USERNAME=hr@flolabsinnovations.com
+CRM_EMAIL_IMAP_MAILBOX=<administrator-confirmed-test-folder>
+CRM_EMAIL_IMAP_USERNAME=<dedicated-test-mailbox-address>
 CRM_EMAIL_IMAP_PASSWORD=<secret from authorized secret store>
 MAILJET_API_KEY=<secret from authorized secret store>
 MAILJET_API_SECRET=<secret from authorized secret store>
@@ -30,14 +31,14 @@ CRM_EMAIL_DATABASE_PATH=.local/email.sqlite
 CRM_EMAIL_TEST_COMMANDS_ENABLED=true
 ```
 
-The test commands require the explicit `CRM_EMAIL_TEST_COMMANDS_ENABLED=true` opt-in and refuse to run when `NODE_ENV=production`. IMAP uses implicit TLS on port 993; outbound sends use HTTPS to Mailjet's fixed `https://api.mailjet.com/v3.1/send` endpoint. Configuration validation rejects partial provider settings, non-HR sender/Reply-To addresses, invalid allowlists, and missing database paths. The database path must be under `.local`; the database is created with owner-only permissions where supported. Windows users must also ensure the `.local` directory ACL allows access only to the authorized account. Email text is stored locally to make the thread test inspectable; use an encrypted disk and do not use real applicant content for tests. Attachments and HTML bodies are not stored.
+The test commands require the explicit `CRM_EMAIL_TEST_COMMANDS_ENABLED=true` opt-in and refuse to run when `NODE_ENV=production`. IMAP uses implicit TLS on port 993 with certificate and hostname validation; `CRM_EMAIL_IMAP_MAILBOX` selects the administrator-confirmed folder (default `INBOX`). Outbound sends use HTTPS to Mailjet's fixed `https://api.mailjet.com/v3.1/send` endpoint. Configuration validation rejects partial provider settings, non-HR sender/Reply-To addresses, invalid allowlists, and missing database paths. The database path must be under `.local`; the database is created with owner-only permissions where supported. Windows users must also ensure the `.local` directory ACL allows access only to the authorized account. Email text is stored locally to make the thread test inspectable; use an encrypted disk and do not use real applicant content for tests. Attachments and HTML bodies are not stored.
 
 Inbox sync and local inspection validate only the mailbox settings and do not require CRM credentials. The HR send command also needs the existing Twenty base URL and API key to look up the test Application, plus `LINK_TOKEN_SECRET` to create the personal links. Configuration errors list variable names only.
 
 ## Safe local procedure
 
 1. Obtain explicit authorization for the recipient and a test-only Twenty Application whose primary email equals that recipient. Do not use an applicant record or production data. Keep that address in `CRM_EMAIL_ALLOWED_RECIPIENTS`; all other recipients are refused.
-2. Confirm with the mailbox owner that the approved HR account is enabled for authenticated IMAP and the execution host is authorized to connect. Confirm the Mailjet account, API credentials, verified sender/domain and test-recipient authorization with its administrator. Credentials are not checked into this repository.
+2. Obtain the dedicated test mailbox hostname, port, account, and folder from the mailbox administrator. Confirm the test host is allowed to connect. Confirm the Mailjet account, API credentials, verified/approved sender, and test-recipient authorization with its administrator. Credentials are not checked into this repository. Do not use the real HR inbox.
 3. If exercising a blocked attempt, add the approved test recipient to the local blocklist first. This operation changes only the local test database and must not be described as a CRM or marketing suppression update:
 
    ```powershell
@@ -75,6 +76,23 @@ Inbox sync and local inspection validate only the mailbox settings and do not re
 
 Automated mocked Mailjet, IMAP, parsing, deduplication, thread matching, configuration, and redaction tests run with `npm test -- src/server/email/mailjet.test.ts src/server/email/mailbox.test.ts src/server/env.test.ts`.
 
+## Live acceptance matrix
+
+No live acceptance tests have been run. Start only after the noted owner provisions access and explicitly approves the test sender, recipient, and synthetic records.
+
+| Test | Current status | Required evidence |
+|---|---|---|
+| A. Dedicated-mailbox IMAP TLS, hostname validation, authentication, and folder read | BLOCKED | Admin-confirmed settings, secure connection, authenticated retrieval from the approved folder |
+| B. Mailjet send and independent receipt | BLOCKED | Approved sender and controlled recipient; redacted provider response/message ID plus recipient inbox evidence |
+| C. Reply retrieval | BLOCKED | One authorized reply imported through IMAP |
+| D. Message-ID threading and unrelated/ambiguous reply handling | BLOCKED live; mocked tests pass | Original and reply headers, preserved thread, unrelated sender left unassociated |
+| E. Twenty Person/Application association and CRM visibility | BLOCKED | Confirmed supported schema/permissions, approved synthetic records, and both messages visible on correct CRM record |
+| F. Duplicate synchronization and restart recovery | BLOCKED live; local tests pass | Repeated sync and process restart without duplicate records |
+| G. Hard-bounce suppression | BLOCKED | Provider-approved bounce simulation, authoritative suppression update, and proof the next send never reaches Mailjet |
+| H. Opt-out handling | BLOCKED | Approved synthetic opt-out, applicable sequence stopped, no provider invocation; distinguish HR one-to-one from marketing |
+| I. Existing HR inbox isolation | BLOCKED | Evidence that only the dedicated test mailbox was configured and accessed |
+| J. Failure handling and redaction | BLOCKED live; mocked tests pass | Safe results for auth failures, timeout, IMAP disconnect, permission/storage failure, duplicate event, and ambiguous match; no secret/body leakage |
+
 ## Access and approval checklist for live verification
 
 Do not paste credentials into chat or source. Provision credentials only into an authorized local secret store or an ignored `.env.local`; the current runtime has no `.env.local` or Twenty, IMAP, or Mailjet configuration.
@@ -89,8 +107,8 @@ Do not paste credentials into chat or source. Provision credentials only into an
 
 ### Authorized end-to-end resources
 
-- [ ] Confirm that `mail.flolabsinnovations.com:993` is the approved IMAP endpoint, provision the HR mailbox credentials as `CRM_EMAIL_IMAP_*` through the local secret store, and authorize execution-host access. Use implicit TLS and do not disable certificate validation.
-- [ ] Mailjet account owner: provision `MAILJET_API_KEY` and `MAILJET_API_SECRET` locally, verify `hr@flolabsinnovations.com` as sender and Reply-To, and confirm the account is approved to send to the controlled test recipient. No SMTP credentials or port access are required for outbound sending.
+- [ ] Mailbox administrator: provide the dedicated test mailbox hostname, port, username, folder, and credentials through the approved secure one-time link; authorize the test host. Never use the real HR inbox during initial acceptance. Use implicit TLS and verify the certificate hostname.
+- [ ] Mailjet account owner: provision `MAILJET_API_KEY` and `MAILJET_API_SECRET` locally, verify and authorize `hr@flolabsinnovations.com` as sender and Reply-To, and approve the controlled test recipient. No SMTP credentials or port access are required for outbound sending.
 - [ ] Explicitly approve the test sender, test recipient, reply-from account, and a synthetic Twenty Person record. Configure `CRM_EMAIL_ALLOWED_RECIPIENTS` with only the approved test recipient. No real applicant, customer, or production record may be used.
 - [ ] For native Twenty persistence, separately authorize the exact supported read/send/thread permissions discovered from the live schema and connect the test mailbox only after approval. Keep Application association unset or indirect. Any required schema change needs Whitney's explicit approval; no CRM email persistence should be attempted before API support and permissions are confirmed.
 

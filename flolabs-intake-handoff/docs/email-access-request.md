@@ -27,12 +27,12 @@ Please confirm:
 
 ## Mailbox owner / operations
 
-Please confirm `mail.flolabsinnovations.com:993` is the approved HR IMAP endpoint using implicit TLS and authorize access from the test/deployment host. Provision the IMAP credential only through the approved local secret store using:
+Please provide the dedicated test mailbox settings (exact IMAP hostname, port, username, and folder) through the approved secure one-time link, and authorize access from the test host. Do not provide or connect the live `hr@flolabsinnovations.com` inbox for initial acceptance testing. Use implicit TLS with certificate validation; do not guess hostnames or disable verification. Provision the credential only through the approved local secret store using:
 
-- `CRM_EMAIL_IMAP_HOST`, `CRM_EMAIL_IMAP_PORT=993`, `CRM_EMAIL_IMAP_USERNAME`, `CRM_EMAIL_IMAP_PASSWORD`
+- `CRM_EMAIL_IMAP_HOST`, `CRM_EMAIL_IMAP_PORT=993`, `CRM_EMAIL_IMAP_MAILBOX`, `CRM_EMAIL_IMAP_USERNAME`, `CRM_EMAIL_IMAP_PASSWORD`
 - `CRM_EMAIL_ALLOWED_RECIPIENTS` containing only Whitney-approved test recipient(s)
 
-Please also confirm the approved Mailjet account, provision `MAILJET_API_KEY` and `MAILJET_API_SECRET` only in the local secret store, and verify `hr@flolabsinnovations.com` as sender and Reply-To. Confirm that Mailjet may send to the explicitly approved controlled recipient. No real-applicant recipients, bulk sends, or TLS-validation exceptions are requested. Do not connect or change Twenty Accounts > Emails settings without separate approval.
+Please also confirm the approved Mailjet account, provision `MAILJET_API_KEY` and `MAILJET_API_SECRET` only in the local secret store, and authorize `hr@flolabsinnovations.com` as sender and Reply-To before any send. Confirm that Mailjet may send only to the explicitly approved dedicated test mailbox or team-owned recipient. No real-applicant recipients, bulk sends, or TLS-validation exceptions are requested. Do not connect or change Twenty Accounts > Emails settings without separate approval.
 
 For local use, place `TWENTY_BASE_URL`, `TWENTY_API_KEY`, `LINK_TOKEN_SECRET`, the Mailjet and IMAP settings above, approved test recipients in `CRM_EMAIL_ALLOWED_RECIPIENTS`, `CRM_EMAIL_DATABASE_PATH=.local/email.sqlite`, and `CRM_EMAIL_TEST_COMMANDS_ENABLED=true` in the approved local secret store or ignored `.env.local`. Set `CRM_EMAIL_TEST_BLOCK_RECIPIENT=natanahelatankeu@gmail.com` only for the local test-blocklist operation. Do not send these values in chat. The run must be non-production and use the explicit allowlist.
 

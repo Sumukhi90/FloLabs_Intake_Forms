@@ -464,7 +464,10 @@ describe('IMAP parsing and synchronization', () => {
     const fakeClient = {
       mailbox: { uidValidity: 123n },
       connect: vi.fn(async () => undefined),
-      getMailboxLock: vi.fn(async () => ({ release: vi.fn() })),
+      getMailboxLock: vi.fn(async (mailbox: string) => {
+        expect(mailbox).toBe('Acceptance');
+        return { release: vi.fn() };
+      }),
       search: vi.fn(async () => [8]),
       async *fetch() {
         yield {
@@ -480,6 +483,7 @@ describe('IMAP parsing and synchronization', () => {
     expect(await synchronizeInbox({
       host: 'mail.example.test',
       port: 993,
+      mailbox: 'Acceptance',
       username: smtp.username,
       password: smtp.password,
     }, store, factory)).toEqual({ imported: 1, duplicates: 0 });
@@ -492,6 +496,7 @@ describe('IMAP parsing and synchronization', () => {
     expect(await synchronizeInbox({
       host: 'mail.example.test',
       port: 993,
+      mailbox: 'Acceptance',
       username: smtp.username,
       password: smtp.password,
     }, store, factory)).toEqual({ imported: 0, duplicates: 1 });
